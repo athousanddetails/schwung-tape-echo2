@@ -36,6 +36,8 @@ while the module is loaded in an FX slot:
 move.local:7700/api/remote-ui/module-assets/tape-echo2/web_ui.html
 ```
 
+![Tape Echo 2 remote panel](docs/remote-ui.png)
+
 ## Install
 
 Via the Schwung Module Store, or manually: copy `dist/tape-echo2/` to
