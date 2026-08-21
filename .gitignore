@@ -1,0 +1,5 @@
+build/
+build-mac/
+build-native/
+dist/
+.DS_Store

@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tape Echo 2</title>
+<style>
+  :root {
+    --panel:#2f3236; --panel-hi:#3a3e43; --face:#24272a; --ink:#e8e4d9;
+    --dim:#9a958a; --accent:#d8823c; --accent-dim:#7a4a22; --line:#191b1d;
+    --green:#6fbf73; --red:#d1584f;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; padding:18px; background:#15171a; color:var(--ink);
+    font:13px/1.4 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  .unit {
+    max-width:940px; margin:0 auto; background:linear-gradient(180deg,var(--panel),#26292c);
+    border:1px solid var(--line); border-radius:10px; padding:16px 18px 20px;
+    box-shadow:0 10px 30px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.06);
+  }
+  header { display:flex; align-items:baseline; gap:12px; border-bottom:1px solid var(--line); padding-bottom:10px; margin-bottom:14px; }
+  h1 { font-size:17px; letter-spacing:.14em; text-transform:uppercase; margin:0; font-weight:600; }
+  .sub { font-size:11px; color:var(--dim); letter-spacing:.05em; }
+  #status { margin-left:auto; font-size:11px; color:var(--dim); }
+  #status.ok  { color:var(--green); }
+  #status.err { color:var(--red); }
+
+  .row { display:flex; flex-wrap:wrap; gap:14px; margin-bottom:16px; align-items:flex-start; }
+  .group { background:var(--face); border:1px solid var(--line); border-radius:8px; padding:12px 14px 14px; }
+  .group > h2 {
+    font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--dim);
+    margin:0 0 12px; font-weight:600;
+  }
+  .knobs { display:flex; gap:16px; flex-wrap:wrap; }
+
+  .knob { width:74px; text-align:center; user-select:none; }
+  .knob svg { display:block; margin:0 auto; cursor:ns-resize; touch-action:none; }
+  .knob .lbl { font-size:10px; letter-spacing:.07em; text-transform:uppercase; color:var(--dim); margin-top:5px; }
+  .knob .val { font-size:11px; color:var(--ink); font-variant-numeric:tabular-nums; margin-top:1px; }
+
+  select, button { font:inherit; color:var(--ink); background:var(--panel-hi);
+    border:1px solid var(--line); border-radius:5px; padding:6px 8px; }
+  select { min-width:120px; }
+
+  .switch { display:flex; align-items:center; gap:9px; margin:9px 0; }
+  .switch .cap {
+    width:46px; height:23px; border-radius:12px; background:#1b1d1f;
+    border:1px solid var(--line); position:relative; cursor:pointer; flex:none;
+    transition:background .12s;
+  }
+  .switch .cap[data-on="1"] { background:var(--accent-dim); }
+  .switch .cap i {
+    position:absolute; top:2px; left:2px; width:17px; height:17px; border-radius:50%;
+    background:#c9c4b8; transition:left .12s, background .12s;
+  }
+  .switch .cap[data-on="1"] i { left:25px; background:var(--accent); }
+  .switch .name { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--dim); }
+
+  .meter { display:flex; align-items:center; gap:8px; margin-top:4px; }
+  .meter .bar { width:150px; height:9px; background:#1b1d1f; border:1px solid var(--line); border-radius:3px; overflow:hidden; }
+  .meter .fill { height:100%; width:0%; background:linear-gradient(90deg,var(--green),var(--accent) 72%,var(--red)); transition:width .08s linear; }
+  .meter .cap2 { font-size:10px; color:var(--dim); letter-spacing:.1em; }
+
+  .foot { margin-top:14px; padding-top:10px; border-top:1px solid var(--line); font-size:10.5px; color:var(--dim); }
+  .foot a { color:var(--accent); }
+  .slotpick { font-size:11px; color:var(--dim); display:flex; gap:6px; align-items:center; }
+</style>
+</head>
+<body>
+<div class="unit">
+  <header>
+    <h1>Tape Echo 2</h1>
+    <span class="sub">three-head tape echo + spring reverb</span>
+    <span id="status">connecting…</span>
+  </header>
+
+  <div class="row">
+    <div class="group" style="flex:1 1 460px">
+      <h2>Echo</h2>
+      <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+        <label class="slotpick">Mode
+          <select id="mode"></select>
+        </label>
+        <label class="slotpick">Slot
+          <select id="slotSel"></select>
+        </label>
+      </div>
+      <div class="knobs">
+        <div class="knob" data-k="repeat_rate"   data-label="Rate"></div>
+        <div class="knob" data-k="intensity"     data-label="Intensity"></div>
+        <div class="knob" data-k="echo_volume"   data-label="Echo"></div>
+        <div class="knob" data-k="reverb_volume" data-label="Reverb"></div>
+        <div class="knob" data-k="mix"           data-label="Mix"></div>
+      </div>
+    </div>
+
+    <div class="group" style="flex:0 1 250px">
+      <h2>Transport</h2>
+      <div class="switch">
+        <div class="cap" data-sw="tempo_sync" data-on="0"><i></i></div>
+        <span class="name">Tempo Sync</span>
+      </div>
+      <label class="slotpick" style="margin:10px 0 4px">Rate Note
+        <select id="echo_rate_note"></select>
+      </label>
+      <div class="switch">
+        <div class="cap" data-sw="input_send" data-on="1"><i></i></div>
+        <span class="name">Input Send</span>
+      </div>
+      <div class="meter">
+        <span class="cap2">REC</span>
+        <div class="bar"><div class="fill" id="vu"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="group" style="flex:1 1 100%">
+      <h2>Tape</h2>
+      <div class="knobs" style="align-items:flex-start">
+        <div class="knob" data-k="input_volume" data-label="Drive"></div>
+        <div class="knob" data-k="bass"         data-label="Bass"    data-bipolar="1"></div>
+        <div class="knob" data-k="treble"       data-label="Treble"  data-bipolar="1"></div>
+        <div class="knob" data-k="wow_flutter"  data-label="Wow/Flut"></div>
+        <label class="slotpick" style="margin-left:8px">Tape Age
+          <select id="tape_age"></select>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    DSP: <a href="https://github.com/dusk-audio/dusk-audio-plugins" target="_blank" rel="noreferrer">Tape Echo 2 by Dusk Audio</a> (GPL-3.0), vendored unmodified · Move port by athousanddetails
+  </div>
+</div>
+
+<script src="/static/schwung-remote-api.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  /* ------------------------------------------------------------------
+   * Transport. Inside schwung-manager's iframe we use the postMessage
+   * bridge; opened directly in a browser we speak the same remote-ui
+   * WebSocket the manager itself uses. The second path is what makes this
+   * usable today: the manager only auto-loads a custom web UI for the
+   * SYNTH component (remote_ui.go guards every call site with
+   * comp == "synth"), so an audio FX never gets an iframe.
+   * ------------------------------------------------------------------ */
+  var COMPONENTS = ["fx1", "fx2"];
+  var MODULE_ID = "tape-echo2";
+
+  var bridge = null;      // schwungRemote when embedded
+  var ws = null;          // WebSocket when standalone
+  var slot = 0;
+  var comp = "fx1";
+  var values = {};
+  var statusEl = document.getElementById("status");
+
+  function setStatus(text, cls) { statusEl.textContent = text; statusEl.className = cls || ""; }
+  function key(k) { return comp + ":" + k; }
+
+  function sendParam(k, v) {
+    var full = key(k);
+    values[full] = String(v);
+    if (bridge) { bridge.setParam(full, String(v)); return; }
+    if (ws && ws.readyState === 1)
+      ws.send(JSON.stringify({ type: "set_param", slot: slot, key: full, value: String(v) }));
+  }
+
+  function onParams(params) {
+    var touched = false;
+    for (var k in params) { values[k] = params[k]; touched = true; }
+    if (touched) refresh();
+  }
+
+  /* ---------------------------------------------------------------- UI */
+
+  var META = {};   // key -> {type,min,max,options}
+  function meta(k) { return META[k] || { type: "float", min: 0, max: 1 }; }
+
+  function num(k, dflt) {
+    var raw = values[key(k)];
+    if (raw === undefined || raw === null || raw === "") return dflt;
+    var m = meta(k);
+    if (m.type === "enum" && m.options) {
+      var i = m.options.indexOf(String(raw));
+      if (i >= 0) return i;
+    }
+    var f = parseFloat(raw);
+    return isNaN(f) ? dflt : f;
+  }
+
+  /* --- knobs --- */
+  var KNOB_R = 25, KNOB_C = 30;
+  function knobSvg() {
+    return '<svg width="60" height="60" viewBox="0 0 60 60">' +
+      '<circle cx="30" cy="30" r="' + KNOB_R + '" fill="#1b1d1f" stroke="#111" />' +
+      '<path class="track" fill="none" stroke="#3d4146" stroke-width="4" stroke-linecap="round" />' +
+      '<path class="arc"   fill="none" stroke="var(--accent)" stroke-width="4" stroke-linecap="round" />' +
+      '<line class="ptr" x1="30" y1="30" x2="30" y2="10" stroke="#e8e4d9" stroke-width="2.5" stroke-linecap="round" />' +
+      '</svg>';
+  }
+  function polar(frac) {
+    var a = (-225 + 270 * frac) * Math.PI / 180;
+    return [KNOB_C + KNOB_R * Math.cos(a), KNOB_C + KNOB_R * Math.sin(a)];
+  }
+  function arcPath(f0, f1) {
+    var a = polar(f0), b = polar(f1);
+    var large = Math.abs(f1 - f0) * 270 > 180 ? 1 : 0;
+    var sweep = f1 >= f0 ? 1 : 0;
+    return "M" + a[0].toFixed(2) + "," + a[1].toFixed(2) +
+           " A" + KNOB_R + "," + KNOB_R + " 0 " + large + " " + sweep +
+           " " + b[0].toFixed(2) + "," + b[1].toFixed(2);
+  }
+
+  var knobs = [];
+  Array.prototype.forEach.call(document.querySelectorAll(".knob"), function (el) {
+    var k = el.dataset.k;
+    el.innerHTML = knobSvg() +
+      '<div class="lbl">' + el.dataset.label + '</div><div class="val">—</div>';
+    var svg = el.querySelector("svg");
+    svg.querySelector(".track").setAttribute("d", arcPath(0, 1));
+    var rec = {
+      key: k, el: el, bipolar: el.dataset.bipolar === "1",
+      arc: svg.querySelector(".arc"), ptr: svg.querySelector(".ptr"),
+      val: el.querySelector(".val"),
+    };
+    knobs.push(rec);
+
+    /* drag vertically; shift = fine */
+    var dragging = false, lastY = 0;
+    svg.addEventListener("pointerdown", function (e) {
+      dragging = true; lastY = e.clientY; svg.setPointerCapture(e.pointerId); e.preventDefault();
+    });
+    svg.addEventListener("pointermove", function (e) {
+      if (!dragging) return;
+      var m = meta(k), span = (m.max - m.min) || 1;
+      var dy = lastY - e.clientY; lastY = e.clientY;
+      var step = span * (e.shiftKey ? 0.0015 : 0.006) * dy;
+      var next = Math.max(m.min, Math.min(m.max, num(k, m.min) + step));
+      sendParam(k, next.toFixed(4)); paint(rec);
+    });
+    function end(e) { if (dragging) { dragging = false; try { svg.releasePointerCapture(e.pointerId); } catch (_) {} } }
+    svg.addEventListener("pointerup", end);
+    svg.addEventListener("pointercancel", end);
+    svg.addEventListener("dblclick", function () {
+      var m = meta(k);
+      sendParam(k, (m.def !== undefined ? m.def : (m.min + m.max) / 2).toFixed(4)); paint(rec);
+    });
+  });
+
+  function paint(rec) {
+    var m = meta(rec.key), span = (m.max - m.min) || 1;
+    var v = num(rec.key, m.min);
+    var f = Math.max(0, Math.min(1, (v - m.min) / span));
+    var origin = rec.bipolar ? 0.5 : 0;
+    rec.arc.setAttribute("d", Math.abs(f - origin) < 0.001 ? "" : arcPath(origin, f));
+    var p = polar(f), cx = KNOB_C, cy = KNOB_C;
+    rec.ptr.setAttribute("x2", (cx + (p[0] - cx) * 0.72).toFixed(2));
+    rec.ptr.setAttribute("y2", (cy + (p[1] - cy) * 0.72).toFixed(2));
+    rec.val.textContent = rec.bipolar
+      ? (v > 0 ? "+" : "") + Math.round(v * 100) + "%"
+      : Math.round(f * 100) + "%";
+  }
+
+  /* --- switches --- */
+  Array.prototype.forEach.call(document.querySelectorAll(".cap"), function (cap) {
+    cap.addEventListener("click", function () {
+      var k = cap.dataset.sw;
+      var on = cap.dataset.on === "1" ? 0 : 1;
+      var m = meta(k);
+      sendParam(k, m.options ? m.options[on] : String(on));
+      cap.dataset.on = String(on);
+    });
+  });
+
+  /* --- selects --- */
+  function fillSelect(id, k) {
+    var sel = document.getElementById(id), m = meta(k);
+    sel.innerHTML = "";
+    if (m.type === "enum" && m.options) {
+      m.options.forEach(function (o, i) {
+        var op = document.createElement("option"); op.value = String(i); op.textContent = o; sel.appendChild(op);
+      });
+    } else {
+      for (var i = m.min; i <= m.max; i++) {
+        var op = document.createElement("option"); op.value = String(i); op.textContent = String(i); sel.appendChild(op);
+      }
+    }
+    sel.onchange = function () {
+      var m2 = meta(k), i = parseInt(sel.value, 10);
+      sendParam(k, m2.options ? m2.options[i] : String(i));
+    };
+  }
+
+  function refresh() {
+    knobs.forEach(paint);
+    ["mode", "tape_age", "echo_rate_note"].forEach(function (k) {
+      var sel = document.getElementById(k); if (!sel || !sel.options.length) return;
+      var m = meta(k);
+      var v = num(k, m.min);
+      sel.value = String(m.options ? Math.round(v) : Math.round(v));
+    });
+    ["tempo_sync", "input_send"].forEach(function (k) {
+      var cap = document.querySelector('.cap[data-sw="' + k + '"]'); if (!cap) return;
+      cap.dataset.on = num(k, 0) >= 1 ? "1" : "0";
+    });
+    var vu = parseFloat(values[key("out_level")]);
+    document.getElementById("vu").style.width =
+      (isNaN(vu) ? 0 : Math.max(0, Math.min(100, (vu / 3) * 100))) + "%";
+  }
+
+  function applyChainParams(arr) {
+    if (!Array.isArray(arr)) return;
+    META = {};
+    arr.forEach(function (p) {
+      META[p.key] = {
+        type: p.type, min: p.min !== undefined ? p.min : 0,
+        max: p.max !== undefined ? p.max : 1,
+        options: p.options, def: p.default,
+      };
+    });
+    fillSelect("mode", "mode");
+    fillSelect("tape_age", "tape_age");
+    fillSelect("echo_rate_note", "echo_rate_note");
+    refresh();
+  }
+
+  /* ------------------------------------------------------- embedded */
+  if (window.parent !== window && window.schwungRemote) {
+    bridge = window.schwungRemote;
+    comp = "synth";
+    setStatus("embedded", "ok");
+    bridge.onParamChange(onParams);
+    bridge.getChainParams().then(applyChainParams);
+    return;
+  }
+
+  /* ----------------------------------------------------- standalone */
+  var slotSel = document.getElementById("slotSel");
+  for (var s = 0; s < 4; s++) {
+    var o = document.createElement("option"); o.value = String(s); o.textContent = "Track " + (s + 1); slotSel.appendChild(o);
+  }
+  slotSel.onchange = function () { slot = parseInt(slotSel.value, 10); subscribe(); };
+
+  function subscribe() {
+    values = {};
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "subscribe", slot: slot }));
+  }
+
+  function connect() {
+    var host = location.host || "move.local:7700";
+    setStatus("connecting…");
+    try { ws = new WebSocket("ws://" + host + "/ws/remote-ui"); }
+    catch (e) { setStatus("no connection", "err"); return; }
+
+    ws.onopen = function () { setStatus("connected", "ok"); subscribe(); };
+    ws.onclose = function () { setStatus("disconnected — retrying", "err"); setTimeout(connect, 2500); };
+    ws.onerror = function () { setStatus("connection error", "err"); };
+    ws.onmessage = function (ev) {
+      var msg; try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      if (msg.slot !== undefined && msg.slot !== slot) return;
+
+      if (msg.type === "slot_info") {
+        /* find which FX component holds us; fall back to fx1 */
+        var found = null;
+        COMPONENTS.forEach(function (c) { if (msg[c] === MODULE_ID) found = c; });
+        if (found && found !== comp) { comp = found; refresh(); }
+        setStatus(found ? "connected · " + found : "module not in this track", found ? "ok" : "err");
+      } else if (msg.type === "chain_params" && msg.component === comp) {
+        /* `data` is a Go json.RawMessage: it arrives as real JSON, so it is
+         * already an array here — only the string form needs parsing. */
+        var d = msg.data;
+        if (typeof d === "string") { try { d = JSON.parse(d); } catch (e) { d = null; } }
+        applyChainParams(d);
+      } else if (msg.type === "param_update") {
+        onParams(msg.params || {});
+      }
+    };
+  }
+  connect();
+  setInterval(function () {   /* keep the record meter alive */
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "subscribe", slot: slot }));
+  }, 4000);
+})();
+</script>
+</body>
+</html>

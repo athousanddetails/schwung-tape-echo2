@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build module (docker, aarch64 cross)
+        run: |
+          docker build -t tape-echo2-builder -f scripts/Dockerfile scripts/
+          docker run --rm -v "$PWD:/build" -u "$(id -u):$(id -g)" -w /build \
+            tape-echo2-builder ./scripts/docker-build.sh
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/tape-echo2-module.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update release.json
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          git fetch origin main
+          git checkout -f main
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          python3 - "$VERSION" <<'PY'
+          import json, sys
+          v = sys.argv[1]
+          with open("release.json") as f:
+              r = json.load(f)
+          r["version"] = v
+          r["download_url"] = ("https://github.com/athousanddetails/schwung-tape-echo2"
+                               f"/releases/download/v{v}/tape-echo2-module.tar.gz")
+          with open("release.json", "w") as f:
+              json.dump(r, f, indent=2)
+              f.write("\n")
+          PY
+          git add release.json
+          git commit -m "release.json: v${VERSION}" || exit 0
+          git push origin main
