@@ -138,6 +138,131 @@ static void te2_apply_preset(te2_instance *inst, int presetIdx)
     inst->values[TE2_P_PRESET].store((float)presetIdx, std::memory_order_relaxed);
 }
 
+static int te2_json_number(const char *json, const char *key, float *out);
+
+/* ------------------------------------------------------------------ */
+/* TapeDelay (schwung-space-delay) preset compatibility                */
+/*                                                                     */
+/* That module saves its patch state as                                */
+/*   {"time":400,"feedback":0.4,"mix":0.35,"tone":0.6,                 */
+/*    "stereo_width":0,"division":"free","bpm":120}                    */
+/* and its own set_param takes the same keys. We accept both spellings */
+/* so an old patch, or anything replaying its parameters, lands on the */
+/* nearest honest Tape Echo setting instead of being dropped.          */
+/* ------------------------------------------------------------------ */
+
+/* time -> the head that can actually reach it, plus the motor speed.
+ * The transport only spans 69.33..177.354 ms on head 1; heads 2 and 3
+ * multiply that by 1.91172 / 2.76118, so between them they cover roughly
+ * 69..490 ms. Anything outside pins at the nearest end, which is what the
+ * hardware does with an out-of-range request. */
+static void te2_legacy_time(te2_instance *inst, float ms)
+{
+    int best = 0;
+    float bestErr = 1e9f;
+    float bestBase = 0.0f;
+    for (int h = 0; h < 3; h++) {
+        const float ratio  = duskaudio::TapeEchoDSP::kHeadRatio[h];
+        const float offset = duskaudio::TapeEchoDSP::kHeadOffsetMs[h];
+        float base = (ms - offset) / ratio;
+        if (base < duskaudio::TapeEchoDSP::kMinDelayMs) base = duskaudio::TapeEchoDSP::kMinDelayMs;
+        if (base > duskaudio::TapeEchoDSP::kMaxDelayMs) base = duskaudio::TapeEchoDSP::kMaxDelayMs;
+        const float got = base * ratio + offset;
+        const float err = got > ms ? got - ms : ms - got;
+        if (err < bestErr) { bestErr = err; best = h; bestBase = base; }
+    }
+    te2_set_index(inst, TE2_P_MODE, (float)best);          /* H1 / H2 / H3 */
+    te2_set_index(inst, TE2_P_RATE,
+                  duskaudio::TapeEchoDSP::repeatRateForDelayMs(bestBase));
+}
+
+/* feedback -> intensity. TapeDelay's 0..1 is a loop gain of 0..0.95, which
+ * always decays; Tape Echo self-oscillates past about 0.75. Scaling to that
+ * threshold keeps a maxed-out old preset at the edge of runaway rather than
+ * turning it into a siren on load. */
+static void te2_legacy_feedback(te2_instance *inst, float v)
+{
+    te2_set_index(inst, TE2_P_INTENSITY, v * 0.75f);
+}
+
+/* tone -> treble. TapeDelay's tone is a one-pole lowpass swept 500 Hz..12 kHz;
+ * the nearest control here is the echo-path treble shelf, centred at its
+ * midpoint. */
+static void te2_legacy_tone(te2_instance *inst, float v)
+{
+    te2_set_index(inst, TE2_P_TREBLE, v * 2.0f - 1.0f);
+}
+
+/* division -> tempo sync + the nearest physical Echo Rate detent for whichever
+ * head is leading. "free" just turns sync off. */
+static void te2_legacy_division(te2_instance *inst, const char *name)
+{
+    static const struct { const char *name; double beats; } kDiv[] = {
+        { "1/1", 4.0 }, { "1/2", 2.0 }, { "1/2d", 3.0 }, { "1/4", 1.0 },
+        { "1/4d", 1.5 }, { "1/4t", 2.0 / 3.0 }, { "1/8", 0.5 }, { "1/8d", 0.75 },
+        { "1/8t", 1.0 / 3.0 }, { "1/16", 0.25 }, { "1/16t", 1.0 / 6.0 },
+    };
+    if (!strcmp(name, "free") || !strcmp(name, "0")) {
+        te2_set_index(inst, TE2_P_SYNC, 0.0f);
+        return;
+    }
+    double beats = 0.0;
+    for (size_t i = 0; i < sizeof kDiv / sizeof kDiv[0]; i++)
+        if (!strcmp(kDiv[i].name, name)) { beats = kDiv[i].beats; break; }
+    if (beats <= 0.0) return;                       /* unknown spelling */
+
+    const int mode = (int)(inst->values[TE2_P_MODE].load(std::memory_order_relaxed) + 0.5f) + 1;
+    const int head = teLeadingHeadIndexForMode(mode);
+    int bestPos = 0;
+    double bestErr = 1e9;
+    for (int pos = 0; pos < kNumSyncKnobPositions; pos++) {
+        const double b = kSyncDivisions[teDivisionForSyncKnobPos(pos, head)].beats;
+        const double err = b > beats ? b - beats : beats - b;
+        if (err < bestErr) { bestErr = err; bestPos = pos; }
+    }
+    te2_set_index(inst, TE2_P_SYNC, 1.0f);
+    te2_set_index(inst, TE2_P_NOTE, (float)(bestPos + 1));
+}
+
+/* Pull a JSON string value out of a flat object. */
+static int te2_json_string(const char *json, const char *k, char *out, size_t cap)
+{
+    char pat[48];
+    snprintf(pat, sizeof pat, "\"%s\":", k);
+    const char *p = strstr(json, pat);
+    if (!p) return -1;
+    p += strlen(pat);
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p != '"') return -1;
+    p++;
+    size_t n = 0;
+    while (*p && *p != '"' && n < cap - 1) out[n++] = *p++;
+    out[n] = 0;
+    return 0;
+}
+
+/* Returns 1 if the blob was a TapeDelay state and has been applied. */
+static int te2_try_legacy_state(te2_instance *inst, const char *val)
+{
+    float v;
+    /* "time" plus "feedback" is the signature; a Tape Echo blob has neither. */
+    if (te2_json_number(val, "time", &v) != 0) return 0;
+    float fb;
+    if (te2_json_number(val, "feedback", &fb) != 0) return 0;
+
+    te2_legacy_time(inst, v);
+    te2_legacy_feedback(inst, fb);
+    if (te2_json_number(val, "mix", &v) == 0)  te2_set_index(inst, TE2_P_MIX, v);
+    if (te2_json_number(val, "tone", &v) == 0) te2_legacy_tone(inst, v);
+    char div[24];
+    if (te2_json_string(val, "division", div, sizeof div) == 0)
+        te2_legacy_division(inst, div);
+    /* stereo_width has no counterpart: the echo bus here is mono and panned,
+     * not widened. Deliberately ignored rather than faked. */
+    te2_log("tape-echo2: imported a TapeDelay preset");
+    return 1;
+}
+
 /* ------------------------------------------------------------------ */
 /* v2 entry points                                                     */
 /* ------------------------------------------------------------------ */
@@ -263,7 +388,11 @@ static void te2_set_param(void *instance, const char *key, const char *val)
 
     if (!strcmp(key, "state")) {
         float v;
-        if (te2_json_number(val, "te2", &v) != 0) return; /* not our blob */
+        if (te2_json_number(val, "te2", &v) != 0) {
+            /* Not ours — it may still be a TapeDelay patch worth importing. */
+            te2_try_legacy_state(inst, val);
+            return;
+        }
         for (int i = 0; i < TE2_PARAM_COUNT; i++) {
             if (i == TE2_P_PRESET) continue; /* a launcher, not state */
             if (te2_json_number(val, te2_params[i].key, &v) == 0)
@@ -271,6 +400,14 @@ static void te2_set_param(void *instance, const char *key, const char *val)
         }
         return;
     }
+
+    /* TapeDelay parameter names, for anything that replays them one at a time.
+     * "mix" is spelled the same in both and needs no alias. */
+    if (!strcmp(key, "time"))         { te2_legacy_time(inst, (float)atof(val)); return; }
+    if (!strcmp(key, "feedback"))     { te2_legacy_feedback(inst, (float)atof(val)); return; }
+    if (!strcmp(key, "tone"))         { te2_legacy_tone(inst, (float)atof(val)); return; }
+    if (!strcmp(key, "division"))     { te2_legacy_division(inst, val); return; }
+    if (!strcmp(key, "stereo_width")) return;   /* no counterpart; see above */
 
     const int idx = te2_param_index(key);
     if (idx < 0) return;

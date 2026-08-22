@@ -3,7 +3,7 @@
   "sections": [
     {
       "heading": "Overview",
-      "body": "Component-modeled vintage three-head tape echo with a three-spring reverb tank. Port of Tape Echo 2 by Dusk Audio (GPL-3.0). The record EQ and tape saturation sit INSIDE the feedback loop, so each repeat darkens and compresses instead of just getting quieter — which is what lets high Intensity settings bloom into warm, stable self-oscillation."
+      "body": "Component-modeled vintage three-head tape echo with a three-spring reverb tank. Port of Tape Echo 2 by Dusk Audio (GPL-3.0). The record EQ and tape saturation sit INSIDE the feedback loop, so each repeat darkens and compresses instead of just getting quieter \u2014 which is what lets high Intensity settings bloom into warm, stable self-oscillation."
     },
     {
       "heading": "Mode",
@@ -15,7 +15,7 @@
     },
     {
       "heading": "Intensity",
-      "body": "Feedback — how much of the playback head sum is fed back onto the tape. Above roughly three quarters it self-oscillates and builds into a growing drone. That is the hardware behaviour, and it gets loud: ride Echo Volume."
+      "body": "Feedback \u2014 how much of the playback head sum is fed back onto the tape. Above roughly three quarters it self-oscillates and builds into a growing drone. That is the hardware behaviour, and it gets loud: ride Echo Volume."
     },
     {
       "heading": "Echo Volume",
@@ -27,7 +27,7 @@
     },
     {
       "heading": "Mix",
-      "body": "Dry against the combined wet bus. 50 percent is the classic parallel setting with both paths at unity — below that the dry stays at unity while the wet fades in, above it the wet stays at unity while the dry fades out. 0 is fully dry, 100 fully wet."
+      "body": "Dry against the combined wet bus. 50 percent is the classic parallel setting with both paths at unity \u2014 below that the dry stays at unity while the wet fades in, above it the wet stays at unity while the dry fades out. 0 is fully dry, 100 fully wet."
     },
     {
       "heading": "Tempo Sync",
@@ -35,7 +35,7 @@
     },
     {
       "heading": "Echo Rate Note",
-      "body": "The eleven physical tempo-sync detents, 1 (longest) to 11 (shortest). The same detent means a different note depending on the leading head, exactly as on the hardware — changing Mode keeps the detent and reassigns its note. Notes the transport cannot physically reach are pinned at the motor limit rather than transposed."
+      "body": "The eleven physical tempo-sync detents, 1 (longest) to 11 (shortest). The same detent means a different note depending on the leading head, exactly as on the hardware \u2014 changing Mode keeps the detent and reassigns its note. Notes the transport cannot physically reach are pinned at the motor limit rather than transposed."
     },
     {
       "heading": "Input Drive",
@@ -51,7 +51,7 @@
     },
     {
       "heading": "Wow & Flutter",
-      "body": "Transport instability: slow wow, capstan flutter, and a stochastic scrape band around 6 Hz. Zero is not perfectly still — the modeled transport always has some motion, matching the reference machine."
+      "body": "Transport instability: slow wow, capstan flutter, and a stochastic scrape band around 6 Hz. Zero is not perfectly still \u2014 the modeled transport always has some motion, matching the reference machine."
     },
     {
       "heading": "Tape Age",
@@ -60,6 +60,10 @@
     {
       "heading": "Input Send",
       "body": "The dub switch. Off stops feeding new audio onto the tape while the existing repeats keep circulating and decaying, and the spring stays live. Play a phrase, switch it off, and the echoes wash out on their own over a clean dry signal."
+    },
+    {
+      "heading": "TapeDelay presets",
+      "body": "Patches saved with the older TapeDelay module (schwung-space-delay) load straight into Tape Echo 2. Its delay time picks the playback head that can actually reach it \u2014 head 1 covers about 69 to 177 ms, head 2 up to 339, head 3 up to 490 \u2014 and the motor is set from there; times outside that range pin at the nearest end. Feedback scales to just under self-oscillation, mix and tone carry across (tone becomes the treble shelf), and a note division switches tempo sync on at the nearest detent. Stereo width has no counterpart here and is ignored."
     },
     {
       "heading": "Credits",

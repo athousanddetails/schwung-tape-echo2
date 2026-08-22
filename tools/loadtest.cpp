@@ -60,6 +60,7 @@ int main(int argc, char **argv)
     if (!inst) return 1;
 
     char buf[8192];
+    static int16_t io[MOVE_FRAMES_PER_BLOCK * 2];
 
     /* -- parameter round trips ---------------------------------------- */
     CHECK(fx->get_param(inst, "name", buf, sizeof buf) > 0
@@ -185,6 +186,57 @@ int main(int argc, char **argv)
     fx->get_param(inst, "mode", buf, sizeof buf);
     CHECK(!strcmp(buf, "H2+R"), "preset \"Dub Throw\" lands on mode 6 (H2+R)");
 
+    /* -- TapeDelay (schwung-space-delay) preset import ------------------ */
+    {
+        /* its patch blob, verbatim from that module's get_param("state") */
+        const char *legacy =
+            "{\"time\":250,\"feedback\":0.8000,\"mix\":0.5000,\"tone\":0.3000,"
+            "\"stereo_width\":50,\"division\":\"1/8\",\"bpm\":120}";
+        fx->set_param(inst, "state", legacy);
+
+        fx->get_param(inst, "mode", buf, sizeof buf);
+        CHECK(!strcmp(buf, "H2"), "legacy 250 ms picks the head that reaches it (%s)", buf);
+        fx->get_param(inst, "tempo_sync", buf, sizeof buf);
+        CHECK(!strcmp(buf, "On"), "legacy division turns tempo sync on");
+        fx->get_param(inst, "echo_note_name", buf, sizeof buf);
+        CHECK(!strcmp(buf, "1/8"), "legacy 1/8 lands on a 1/8 detent (%s)", buf);
+        fx->get_param(inst, "mix", buf, sizeof buf);
+        CHECK(fabs(atof(buf) - 0.5) < 1e-3, "legacy mix carries over");
+        fx->get_param(inst, "intensity", buf, sizeof buf);
+        CHECK(fabs(atof(buf) - 0.6) < 1e-3,
+              "legacy feedback 0.8 -> intensity 0.6 (scaled below runaway)");
+
+        /* and it must actually DELAY by ~250 ms, not merely claim to */
+        fx->set_param(inst, "tempo_sync", "Off");   /* honour the stored time */
+        fx->set_param(inst, "intensity", "0");
+        fx->set_param(inst, "echo_volume", "1.0");
+        fx->set_param(inst, "mix", "1.0");
+        for (int b = 0; b < 400; b++) {             /* settle the smoothers */
+            memset(io, 0, sizeof io);
+            fx->process_block(inst, io, MOVE_FRAMES_PER_BLOCK);
+        }
+        double peak = 0; int at = -1;
+        for (int b = 0; b < 260; b++) {
+            memset(io, 0, sizeof io);
+            if (b == 0) io[0] = io[1] = 20000;
+            fx->process_block(inst, io, MOVE_FRAMES_PER_BLOCK);
+            for (int i = 0; i < MOVE_FRAMES_PER_BLOCK; i++) {
+                double a = fabs((double)io[i * 2]);
+                if (a > peak) { peak = a; at = b * MOVE_FRAMES_PER_BLOCK + i; }
+            }
+        }
+        const double ms = at * 1000.0 / 44100.0;
+        CHECK(fabs(ms - 250.0) < 20.0,
+              "legacy 250 ms preset echoes at %.0f ms", ms);
+    }
+
+    /* an unknown blob must be ignored, not half-applied */
+    fx->set_param(inst, "state", "{\"nonsense\":1}");
+    fx->get_param(inst, "mode", buf, sizeof buf);
+    CHECK(!strcmp(buf, "H2"), "unknown state blob leaves settings alone");
+
+    fx->set_param(inst, "preset", "Default");
+
     /* -- audio: an impulse must come back with a delayed echo ----------- */
     fx->set_param(inst, "preset", "Default");
     fx->set_param(inst, "echo_volume", "1.0");
@@ -192,7 +244,6 @@ int main(int argc, char **argv)
     fx->set_param(inst, "mix", "0.5");
 
     const int totalBlocks = 200; /* ~580 ms */
-    static int16_t io[MOVE_FRAMES_PER_BLOCK * 2];
     double energyEarly = 0, energyEcho = 0;
     for (int b = 0; b < totalBlocks; b++) {
         memset(io, 0, sizeof io);

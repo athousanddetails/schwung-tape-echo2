@@ -23,6 +23,10 @@ Intensity above ~75% self-oscillates. Input Send is the dub switch: off stops
 feeding the tape while existing repeats wash out. Bass and Treble are on the
 echo path only.
 
+Patches from the older [TapeDelay](https://github.com/charlesvestal/schwung-space-delay)
+module load as-is: the stored delay time picks the playback head that can reach
+it, and feedback, mix, tone and note division carry across.
+
 Works with [Movy](https://github.com/DimaDake/schwung-movy) — a
 `movy_config.json` ships with the module.
 
