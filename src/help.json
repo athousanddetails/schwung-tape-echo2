@@ -62,8 +62,16 @@
       "body": "The dub switch. Off stops feeding new audio onto the tape while the existing repeats keep circulating and decaying, and the spring stays live. Play a phrase, switch it off, and the echoes wash out on their own over a clean dry signal."
     },
     {
+      "heading": "Ping Pong",
+      "body": "Sends successive repeats to alternate sides. Tape Echo has a single mono tape loop, so the alternation is applied to the echo bus rather than by cross-feeding the loop: it is exact while one playback head is active, and becomes stereo movement rather than strict left-right alternation in the multi-head modes, where the taps do not land on one grid. Off is the classic centred behaviour."
+    },
+    {
+      "heading": "Stereo Width",
+      "body": "How far Ping Pong swings, from centred at 0 to hard left and right at 100. Constant power across the sweep, so widening does not change the level. Only does anything while Ping Pong is on. A TapeDelay patch's stereo width arrives here and switches Ping Pong on, since width is what made that module's two cross-fed delay lines alternate."
+    },
+    {
       "heading": "TapeDelay presets",
-      "body": "Patches saved with the older TapeDelay module (schwung-space-delay) load straight into Tape Echo 2. Its delay time picks the playback head that can actually reach it \u2014 head 1 covers about 69 to 177 ms, head 2 up to 339, head 3 up to 490 \u2014 and the motor is set from there; times outside that range pin at the nearest end. Feedback scales to just under self-oscillation, mix and tone carry across (tone becomes the treble shelf), and a note division switches tempo sync on at the nearest detent. Stereo width has no counterpart here and is ignored."
+      "body": "Patches saved with the older TapeDelay module (schwung-space-delay) load straight into Tape Echo 2. Its delay time picks the playback head that can actually reach it \u2014 head 1 covers about 69 to 177 ms, head 2 up to 339, head 3 up to 490 \u2014 and the motor is set from there; times outside that range pin at the nearest end. Feedback scales to just under self-oscillation, mix and tone carry across (tone becomes the treble shelf), and a note division switches tempo sync on at the nearest detent. Stereo width maps to the Ping Pong widener and switches it on."
     },
     {
       "heading": "Credits",

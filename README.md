@@ -14,7 +14,7 @@ age, and tempo sync with the reference machine's leading-head note tables.
 | Page | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
 |---|---|---|---|---|---|---|---|---|
 | **Echo** | Mode | Rate | Intensity | Echo Vol | Reverb Vol | Mix | Tempo Sync | Rate Note |
-| **Tape** | Drive | Bass | Treble | Wow/Flutter | Tape Age | Input Send | — | — |
+| **Tape** | Drive | Bass | Treble | Wow/Flutter | Tape Age | Input Send | Ping Pong | Width |
 
 Modes are `H1 H2 H3 H2+3 H1+R H2+R H3+R H12+R H23+R H13+R H123R Rev` — digits
 are the live playback heads, `R` is the spring tank.
@@ -23,9 +23,14 @@ Intensity above ~75% self-oscillates. Input Send is the dub switch: off stops
 feeding the tape while existing repeats wash out. Bass and Treble are on the
 echo path only.
 
+Ping Pong alternates successive repeats left and right, Width sets how far it
+swings. The tape loop is mono, so the alternation is applied to the echo bus —
+exact on a single head, stereo movement rather than strict alternation in the
+multi-head modes.
+
 Patches from the older [TapeDelay](https://github.com/charlesvestal/schwung-space-delay)
 module load as-is: the stored delay time picks the playback head that can reach
-it, and feedback, mix, tone and note division carry across.
+it, and feedback, mix, tone, note division and stereo width carry across.
 
 Works with [Movy](https://github.com/DimaDake/schwung-movy) — a
 `movy_config.json` ships with the module.

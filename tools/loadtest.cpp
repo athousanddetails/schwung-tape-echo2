@@ -156,8 +156,8 @@ int main(int argc, char **argv)
         knobs /= 2;   /* one open + one close quote per key */
         CHECK(n > 0 && knobs > 0 && knobs <= 8,
               "ui_hierarchy declares %d knobs (Move has 8 encoders)", knobs);
-        CHECK(params == 14,
-              "ui_hierarchy publishes all 14 published params (got %d)", params);
+        CHECK(params == 16,
+              "ui_hierarchy publishes all 16 published params (got %d)", params);
     }
 
     /* -- state round trip ---------------------------------------------- */
@@ -186,6 +186,71 @@ int main(int argc, char **argv)
     fx->get_param(inst, "mode", buf, sizeof buf);
     CHECK(!strcmp(buf, "H2+R"), "preset \"Dub Throw\" lands on mode 6 (H2+R)");
 
+    /* -- ping-pong ------------------------------------------------------ */
+    {
+        /* 1. With Ping Pong on and Width 0 the shell reconstructs the dry and
+         *    blends it itself. That must equal what the core would have mixed:
+         *    it is the only check that the reconstructed monitor shelves,
+         *    input taper, mix law and output gain are all right. */
+        void *ref = fx->create_instance(".", nullptr);
+        void *shl = fx->create_instance(".", nullptr);
+        const char *cfg[][2] = { {"mode","H1"}, {"intensity","0.35"}, {"echo_volume","0.8"},
+                                 {"mix","0.42"}, {"input_volume","0.7"}, {"wow_flutter","0"},
+                                 {"tape_age","New"} };
+        for (int c = 0; c < 7; c++) {
+            fx->set_param(ref, cfg[c][0], cfg[c][1]);
+            fx->set_param(shl, cfg[c][0], cfg[c][1]);
+        }
+        fx->set_param(shl, "ping_pong", "On");
+        fx->set_param(shl, "stereo_width", "0");
+
+        static int16_t ra[MOVE_FRAMES_PER_BLOCK * 2], sa[MOVE_FRAMES_PER_BLOCK * 2];
+        double worst = 0;
+        for (int b = 0; b < 300; b++) {
+            for (int k = 0; k < MOVE_FRAMES_PER_BLOCK; k++) {
+                const double s = (b < 40)
+                    ? 0.5 * sin(2.0 * M_PI * 220.0 * (b * MOVE_FRAMES_PER_BLOCK + k) / 44100.0) : 0.0;
+                ra[k*2] = ra[k*2+1] = sa[k*2] = sa[k*2+1] = (int16_t)(s * 20000);
+            }
+            fx->process_block(ref, ra, MOVE_FRAMES_PER_BLOCK);
+            fx->process_block(shl, sa, MOVE_FRAMES_PER_BLOCK);
+            if (b > 60)
+                for (int k = 0; k < MOVE_FRAMES_PER_BLOCK * 2; k++) {
+                    const double d = fabs((double)ra[k] - (double)sa[k]);
+                    if (d > worst) worst = d;
+                }
+        }
+        CHECK(worst <= 3, "width 0 blend matches the core's own mix (%.0f LSB)", worst);
+        fx->destroy_instance(ref);
+
+        /* 2. At full width successive repeats must land on opposite sides. */
+        fx->set_param(shl, "repeat_rate", "1.0");
+        fx->set_param(shl, "intensity", "0.62");
+        fx->set_param(shl, "echo_volume", "1.0");
+        fx->set_param(shl, "mix", "1.0");
+        fx->set_param(shl, "stereo_width", "100");
+        for (int b = 0; b < 500; b++) { memset(sa, 0, sizeof sa); fx->process_block(shl, sa, MOVE_FRAMES_PER_BLOCK); }
+        int found = 0, flips = 0, prev = 0;
+        bool prevQuiet = true;
+        for (int b = 0; b < 120 && found < 5; b++) {
+            memset(sa, 0, sizeof sa);
+            if (b == 0) { sa[0] = sa[1] = 24000; }
+            fx->process_block(shl, sa, MOVE_FRAMES_PER_BLOCK);
+            double l = 0, r = 0;
+            for (int k = 0; k < MOVE_FRAMES_PER_BLOCK; k++) { l += fabs((double)sa[k*2]); r += fabs((double)sa[k*2+1]); }
+            const bool loud = (l + r) > 4000;
+            if (loud && prevQuiet && b > 0) {
+                const int side = l > r ? 1 : -1;
+                if (found > 0 && side != prev) flips++;
+                prev = side; found++;
+            }
+            prevQuiet = !loud;
+        }
+        CHECK(found >= 4 && flips >= found - 1,
+              "every repeat swaps sides (%d repeats, %d alternations)", found, flips);
+        fx->destroy_instance(shl);
+    }
+
     /* -- TapeDelay (schwung-space-delay) preset import ------------------ */
     {
         /* its patch blob, verbatim from that module's get_param("state") */
@@ -205,6 +270,10 @@ int main(int argc, char **argv)
         fx->get_param(inst, "intensity", buf, sizeof buf);
         CHECK(fabs(atof(buf) - 0.6) < 1e-3,
               "legacy feedback 0.8 -> intensity 0.6 (scaled below runaway)");
+        fx->get_param(inst, "stereo_width", buf, sizeof buf);
+        CHECK(atoi(buf) == 50, "legacy stereo_width 50 carries over (%s)", buf);
+        fx->get_param(inst, "ping_pong", buf, sizeof buf);
+        CHECK(!strcmp(buf, "On"), "legacy width arms ping-pong");
 
         /* and it must actually DELAY by ~250 ms, not merely claim to */
         fx->set_param(inst, "tempo_sync", "Off");   /* honour the stored time */

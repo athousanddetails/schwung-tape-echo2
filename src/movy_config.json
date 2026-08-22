@@ -144,8 +144,24 @@
        "On"
       ]
      },
-     null,
-     null
+     {
+      "key": "ping_pong",
+      "short": "PP",
+      "full": "Ping Pong",
+      "type": "enum",
+      "options": [
+       "Off",
+       "On"
+      ]
+     },
+     {
+      "key": "stereo_width",
+      "short": "WIDTH",
+      "full": "Stereo Width",
+      "type": "int",
+      "min": 0,
+      "max": 100
+     }
     ]
    ]
   }

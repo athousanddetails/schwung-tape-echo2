@@ -73,7 +73,7 @@
   .heads span{font-size:10.5px;color:#eaf5e0;font-variant-numeric:tabular-nums}
 
   /* bottom strip */
-  .strip{display:grid;grid-template-columns:repeat(3,1fr);background:var(--strip);
+  .strip{display:grid;grid-template-columns:repeat(4,1fr);background:var(--strip);
     border-top:2px solid #000;color:var(--strip-ink)}
   .cell{padding:9px 14px 11px;display:flex;flex-direction:column;align-items:center;gap:6px;
     border-right:1px solid #b9b6ad}
@@ -120,6 +120,7 @@
         <div class="kn" data-k="input_volume" data-cap="INPUT<br>DRIVE"></div>
         <div class="kn" data-k="wow_flutter"  data-cap="WOW &amp;<br>FLUTTER"></div>
         <div class="kn" data-k="mix"          data-cap="MIX"></div>
+        <div class="kn" data-k="stereo_width" data-cap="STEREO<br>WIDTH" data-int="1"></div>
       </div>
     </div>
 
@@ -161,6 +162,11 @@
         <div class="note" id="noteRead" style="cursor:ns-resize;touch-action:none" title="drag to change the sync note">FREE</div>
       </div>
       <div class="ends" style="width:66px"><span>OFF</span><span>ON</span></div>
+    </div>
+    <div class="cell">
+      <div class="cap">PING PONG <span class="led" id="ppLed" style="width:9px;height:9px"></span></div>
+      <div class="rocker" data-sw="ping_pong"><i></i></div>
+      <div class="ends"><span>OFF</span><span>ON</span></div>
     </div>
     <div class="cell">
       <div class="cap">TAPE AGE</div>
@@ -380,13 +386,17 @@ function refresh(){
   }
   /* grey what the current mode does not use */
   knobs.forEach(function(r){
-    var dead = (r.k==="reverb_volume" && !revOn(mode)) ||
+    var dead = (r.k==="stereo_width" && !pp) ||
+               (r.k==="reverb_volume" && !revOn(mode)) ||
                ((r.k==="repeat_rate"||r.k==="intensity"||r.k==="echo_volume") && !tapeOn(mode)) ||
                (r.k==="repeat_rate" && synced);
     r.box.classList.toggle("off",dead);
   });
 
   document.querySelector('.rocker[data-sw="tempo_sync"]').dataset.on=synced?"1":"0";
+  var pp=num("ping_pong",0)>=1;
+  document.querySelector('.rocker[data-sw="ping_pong"]').dataset.on=pp?"1":"0";
+  document.getElementById("ppLed").classList.toggle("on",pp);
   var send_=num("input_send",1)>=1;
   document.querySelector('.rocker[data-sw="input_send"]').dataset.on=send_?"1":"0";
   document.getElementById("sendLed").classList.toggle("on",send_);

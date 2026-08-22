@@ -39,6 +39,8 @@ const PARAMS = [
     { key: "wow_flutter", name: "Wow/Flutter", type: "float", min: 0, max: 1, step: 0.02 },
     { key: "tape_age", name: "Tape Age", type: "enum", options: ["New", "Used", "Old"] },
     { key: "input_send", name: "Input Send", type: "enum", options: ["Off", "On"] },
+    { key: "ping_pong", name: "Ping Pong", type: "enum", options: ["Off", "On"] },
+    { key: "stereo_width", name: "Width", type: "int", min: 0, max: 100, step: 5 },
 ];
 
 const ROWS_PER_PAGE = 4;

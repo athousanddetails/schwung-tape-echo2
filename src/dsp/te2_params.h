@@ -35,6 +35,8 @@ enum Te2ParamIndex {
     TE2_P_WOW,          /* wow & flutter amount */
     TE2_P_AGE,          /* enum New/Used/Old -> 0.0/0.5/1.0 */
     TE2_P_SEND,         /* enum Off/On: program feed to tape ("dub" switch) */
+    TE2_P_PINGPONG,     /* enum Off/On: alternate successive repeats L/R */
+    TE2_P_WIDTH,        /* 0..100: how far the ping-pong swings (0 = centred) */
     /* ---- not published (see header comment) ---- */
     TE2_P_OUTPUT_VOL,   /* -20..+20 dB; left at 0.5 = unity, use the mixer */
     TE2_P_ECHO_PAN,     /* left at 0.5 = center */
@@ -91,6 +93,8 @@ static const te2_param_t te2_params[TE2_PARAM_COUNT] = {
     { "wow_flutter",    "Wow & Flutter", TE2_FLOAT, 0,   1, 0.0f, 0, 0 },
     { "tape_age",       "Tape Age",      TE2_ENUM,  0,   2, 1,    te2_opts_age,    3 },
     { "input_send",     "Input Send",    TE2_ENUM,  0,   1, 1,    te2_opts_offon,  2 },
+    { "ping_pong",      "Ping Pong",     TE2_ENUM,  0,   1, 0,    te2_opts_offon,  2 },
+    { "stereo_width",   "Stereo Width",  TE2_INT,   0, 100, 0,    0, 0 },
     /* unpublished */
     { "output_volume",  "Output Volume", TE2_FLOAT, 0,   1, 0.5f, 0, 0 },
     { "echo_pan",       "Echo Pan",      TE2_FLOAT, 0,   1, 0.5f, 0, 0 },
