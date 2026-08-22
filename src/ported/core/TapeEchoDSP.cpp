@@ -1,5 +1,9 @@
 // TapeEchoDSP.cpp — vintage three-head tape echo emulation core (framework-free C++17).
 
+// MODIFIED for the Schwung port of Tape Echo 2 (athousanddetails), from the
+// original by Dusk Audio. Change: a per-head ping-pong stage on the echo
+// OUTPUT tap. With Ping Pong off the arithmetic below is the original's,
+// sample for sample. GPL-3.0 as upstream.
 #include "TapeEchoDSP.hpp"
 #include "DuskDenormals.hpp"   // ScopedFlushDenormals (SSE + ARM64 FPCR)
 
@@ -709,6 +713,8 @@ void TapeEchoDSP::prepare(double sampleRate, int /*maxBlockSize*/)
     maxDelaySamples = (float)(tapeLen - 8);
     writeIdx        = 0;
 
+    for (int i = 0; i < 3; ++i) { ppPhase[i] = 0.0; ppSign[i] = 0.0f; }
+
     for (auto& ch : channels)
     {
         ch.tape.assign((size_t)tapeLen, 0.0f);
@@ -747,6 +753,9 @@ void TapeEchoDSP::prepare(double sampleRate, int /*maxBlockSize*/)
             -6.13329f, 0.492299f, /*high=*/true));
     }
     spring.prepare(fs, 1.0f);
+    /* ~4 ms hand-over on the ping-pong square: long enough to be click-free,
+     * short enough that a repeat lands fully on its side. */
+    ppSmoothCoeff = 1.0f - std::exp(-1.0f / (0.004f * (float)fs));
 
     noiseLP.setCutoff(2.0f, fs);
     flutterBand.set(kFlutterNoiseHz, kFlutterNoiseQ, fs);
@@ -1454,6 +1463,44 @@ void TapeEchoDSP::processBlock(const float* const* inputs, float* const* outputs
         const float headSum = (h1 * g1 + h2 * g2 + h3 * g3) * wobble;
         const float amplifiedHeadSum =
             feedbackReadAmplifier(headSum, feedbackCurve);
+
+        // Ping-pong (Schwung addition) — OUTPUT tap only. The feedback path
+        // above is untouched: there is still one mono tape, so the repeat
+        // train and the whole tape character are exactly the original's; all
+        // that changes is which side each repeat leaves from.
+        //
+        // Each head advances its own square at half its own delay, so repeat
+        // n of a head goes one way and n+1 the other. Doing it here rather
+        // than on the summed bus is the point: in a multi-head mode the taps
+        // sit at 1.00 / 1.91 / 2.76 of the period and no single square can
+        // separate them.
+        float amplifiedHeadSumL = amplifiedHeadSum;
+        float amplifiedHeadSumR = amplifiedHeadSum;
+        const bool pingPongOn = pPingPong.load(std::memory_order_relaxed) > 0.5f;
+        if (pingPongOn)
+        {
+            const float width = pStereoWidth.load(std::memory_order_relaxed);
+            const float dHead[3] = { d1, d2, d3 };
+            const float hg[3]    = { h1 * g1, h2 * g2, h3 * g3 };
+            float sumL = 0.0f, sumR = 0.0f;
+            for (int hd = 0; hd < 3; ++hd)
+            {
+                const double period = 2.0 * (double)(dHead[hd] > 4.0f ? dHead[hd] : 4.0f);
+                ppPhase[hd] += 1.0 / period;
+                if (ppPhase[hd] >= 1.0) ppPhase[hd] -= 1.0;
+                const float target = ppPhase[hd] < 0.5 ? 1.0f : -1.0f;
+                ppSign[hd] += ppSmoothCoeff * (target - ppSign[hd]);
+
+                const float s = width * ppSign[hd];
+                // Constant power across the swing, so widening never changes
+                // the level and s = 0 is exactly the centred original.
+                const float comp = 1.0f / std::sqrt(1.0f + s * s);
+                sumL += hg[hd] * (1.0f + s) * comp;
+                sumR += hg[hd] * (1.0f - s) * comp;
+            }
+            amplifiedHeadSumL = feedbackReadAmplifier(sumL * wobble, feedbackCurve);
+            amplifiedHeadSumR = feedbackReadAmplifier(sumR * wobble, feedbackCurve);
+        }
         const float loopReadBlend = feedbackReadLoopBlend(feedbackCurve);
         // Multi-head loop-gain correction, loop path only. Advanced once per
         // sample alongside headGain above so the two track each other through a
@@ -1681,11 +1728,32 @@ void TapeEchoDSP::processBlock(const float* const* inputs, float* const* outputs
 
         // Echo output path only: bass/treble shelves (dry and reverb
         // are unaffected, matching the hardware layout).
-        float echoWet = amplifiedHeadSum + reproAgeNoise;
+        // Each shelf must see exactly one sample per sample, so pick the
+        // pre-shelf values first and filter once.
+        float echoWet =
+            (pingPongOn ? amplifiedHeadSumL : amplifiedHeadSum) + reproAgeNoise;
+        float echoWetR = pingPongOn ? amplifiedHeadSumR + reproAgeNoise : 0.0f;
         if (bassShelfActive)
             echoWet = ch.bassShelf.process(echoWet);
         if (trebleShelfActive)
             echoWet = ch.trebleShelf.process(echoWet);
+
+        // Ping-pong (Schwung addition): the right side gets its own shelf
+        // pair, carried by the second Channel — unused by the mono effect
+        // path and already given the same coefficients. Off, echoWetR simply
+        // mirrors echoWet and no extra filtering runs.
+        if (pingPongOn)
+        {
+            Channel& chR = channels[channels.size() > 1 ? 1 : 0];
+            if (bassShelfActive)
+                echoWetR = chR.bassShelf.process(echoWetR);
+            if (trebleShelfActive)
+                echoWetR = chR.trebleShelf.process(echoWetR);
+        }
+        else
+        {
+            echoWetR = echoWet;
+        }
 
         // Spring tank is fed from the same mono preamp signal.
         const float rev = spring.process(springPre * revSend);
@@ -1707,7 +1775,7 @@ void TapeEchoDSP::processBlock(const float* const* inputs, float* const* outputs
             const float reverbPanGain = numChannels == 1
                 ? 1.0f : 2.0f * (c == 0 ? 1.0f - reverbPan : reverbPan);
             const float dryPath = dryLvl * inputGain * dry;
-            const float wetPath = echoLvl * echoWet * echoPanGain
+            const float wetPath = echoLvl * (c == 0 ? echoWet : echoWetR) * echoPanGain
                                 + revLvl * rev * reverbPanGain;
             const float mixed = dryMixGain * dryPath + wetMixGain * wetPath;
             // POWER off: clean passthrough. The wet state is cleared on the

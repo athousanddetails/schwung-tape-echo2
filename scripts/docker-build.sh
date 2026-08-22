@@ -9,6 +9,28 @@ TARGET="${1:-all}"
 echo "=== config contract ==="
 python3 tools/check_config.py
 
+# ---- The modified core must be bit-identical to upstream with Ping Pong off.
+# Fetch the pristine core and render the same program through both.
+echo "=== core equivalence vs pristine upstream ==="
+rm -rf build-native/pristine && mkdir -p build-native/pristine
+if git clone -q --depth 1 https://github.com/dusk-audio/dusk-audio-plugins \
+        build-native/dusk 2>/dev/null; then
+    cp build-native/dusk/plugins/tape-echo/core/TapeEchoDSP.hpp \
+       build-native/dusk/plugins/tape-echo/core/TapeEchoDSP.cpp build-native/pristine/
+    g++ -O2 -std=c++17 tests/core_equivalence.cpp build-native/pristine/TapeEchoDSP.cpp \
+        -Ibuild-native/pristine -Isrc/ported/shared-dpf/dsp \
+        -Ibuild-native/dusk/plugins/tape-echo/dpf-plugin -o build-native/eq_pristine
+    g++ -O2 -std=c++17 tests/core_equivalence.cpp src/ported/core/TapeEchoDSP.cpp \
+        -Isrc/ported/core -Isrc/ported/shared-dpf/dsp -Isrc/ported/dpf-plugin \
+        -o build-native/eq_ours
+    A=$(./build-native/eq_pristine); B=$(./build-native/eq_ours)
+    echo "  pristine=$A  ours=$B"
+    [ "$A" = "$B" ] || { echo "FAIL: the core diverges from upstream with Ping Pong off"; exit 1; }
+    echo "  ok: identical with Ping Pong off"
+else
+    echo "  (skipped: upstream not reachable)"
+fi
+
 # ---- Native DSP tests: compile and RUN in-container before cross-compiling.
 # A red test here fails the whole build.
 echo "=== native DSP tests ==="

@@ -1,6 +1,11 @@
 // TapeEchoDSP.hpp
 // Component-modeled vintage three-head tape echo with spring reverb.
 //
+// MODIFIED for the Schwung port of Tape Echo 2 (athousanddetails), from the
+// original by Dusk Audio. Change: a per-head ping-pong stage on the echo
+// OUTPUT tap (setPingPong / setStereoWidth). With it off every value and
+// every code path is the original's, sample for sample. GPL-3.0 as upstream.
+//
 // Framework-free: standard C++17 only. No JUCE, no host dependencies.
 // Designed to be wrapped by DPF, raw CLAP, or any other plugin shell.
 //
@@ -215,6 +220,12 @@ public:
     void setReverbPan(float v01) noexcept         { pReverbPan.store(clamp01(v01), std::memory_order_relaxed); }
     void setInputSend(bool enabled) noexcept      { pInputSend.store(enabled ? 1.0f : 0.0f, std::memory_order_relaxed); }
     void setMix(float v01) noexcept               { pMix.store(clamp01(v01), std::memory_order_relaxed); }
+    /* Ping-pong (Schwung addition). Each playback head alternates its own
+     * repeats between the sides, on its own period — so a multi-head mode
+     * alternates correctly instead of smearing, which is only possible from
+     * in here where the taps are still separate. Off = untouched original. */
+    void setPingPong(bool on) noexcept            { pPingPong.store(on ? 1.0f : 0.0f, std::memory_order_relaxed); }
+    void setStereoWidth(float v01) noexcept       { pStereoWidth.store(clamp01(v01), std::memory_order_relaxed); }
     float getTapeAge() const noexcept             { return pTapeAge.load(std::memory_order_relaxed); }
 
     // The motor control is intentionally nonlinear. The inverse is used by
@@ -533,6 +544,14 @@ private:
         float              loopEnvelope = 0.0f;     // regeneration drive only
         float              magneticEnvelope = 0.0f;
     };
+
+    /* Ping-pong state (Schwung addition): one phase and one smoothed square
+     * per head, so each head's repeats swap on their own grid. */
+    std::atomic<float> pPingPong { 0.0f };
+    std::atomic<float> pStereoWidth { 0.0f };
+    double ppPhase[3] { 0.0, 0.0, 0.0 };
+    float  ppSign[3]  { 0.0f, 0.0f, 0.0f };
+    float  ppSmoothCoeff = 1.0f;
 
     std::array<Channel, kMaxChannels> channels;
     SpringReverb spring; // shared mono wet path

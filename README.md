@@ -24,9 +24,9 @@ feeding the tape while existing repeats wash out. Bass and Treble are on the
 echo path only.
 
 Ping Pong alternates successive repeats left and right, Width sets how far it
-swings. The tape loop is mono, so the alternation is applied to the echo bus —
-exact on a single head, stereo movement rather than strict alternation in the
-multi-head modes.
+swings. Each head alternates on its own delay, so the multi-head modes separate
+too. With it off the echo bus is mono and the output is bit-identical to Dusk
+Audio's original — the build checks that against upstream on every run.
 
 Patches from the older [TapeDelay](https://github.com/charlesvestal/schwung-space-delay)
 module load as-is: the stored delay time picks the playback head that can reach
@@ -64,8 +64,11 @@ Requires Docker (cross-compiles for the Move's ARM64, pinned to glibc 2.35):
 ## Credits
 
 - **[Tape Echo 2](https://github.com/dusk-audio/dusk-audio-plugins/tree/main/plugins/tape-echo)**
-  by **Dusk Audio** (GPL-3.0) — the DSP. The core in `src/ported/` is vendored
-  **unmodified**; this project is only the Schwung shell around it.
+  by **Dusk Audio** (GPL-3.0) — the DSP, and all of the modelling credit.
+  The core in `src/ported/` carries one Schwung-specific change, marked in the
+  files: a per-head ping-pong stage on the echo output tap. Switch Ping Pong
+  off and it is upstream sample for sample, which the build verifies against a
+  fresh checkout of the original.
 - Move port by athousanddetails.
 
 GPL-3.0, inherited from upstream.

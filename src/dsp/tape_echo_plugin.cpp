@@ -46,16 +46,6 @@ struct te2_instance {
 
     float bufL[MOVE_FRAMES_PER_BLOCK];
     float bufR[MOVE_FRAMES_PER_BLOCK];
-    float rawL[MOVE_FRAMES_PER_BLOCK];   /* input kept for the shell-side dry */
-    float rawR[MOVE_FRAMES_PER_BLOCK];
-
-    /* Ping-pong stage. The core's wet bus is mono (one tape loop), so the
-     * alternation is produced here rather than by cross-feeding the loop —
-     * that would mean editing the vendored core. See te2_ping_pong(). */
-    duskaudio::Biquad dryLowShelf[2], dryHighShelf[2];
-    double ppPhase = 0.0;      /* 0..1 over one full L->R->L cycle */
-    float  ppSign  = 0.0f;     /* smoothed square, -1..+1 */
-    bool   shelvesReady = false;
 
     /* serve buffers (control thread only) */
     char chain_buf[8192];
@@ -96,6 +86,8 @@ static void te2_push(te2_instance *inst, int idx, float v)
     case TE2_P_REVERB_VOL:  d.setReverbLevel(v);                     break;
     case TE2_P_REVERB_PAN:  d.setReverbPan(v);                       break;
     case TE2_P_MIX:         d.setMix(v);                             break;
+    case TE2_P_PINGPONG:    d.setPingPong(v > 0.5f);                 break;
+    case TE2_P_WIDTH:       d.setStereoWidth(v * 0.01f);             break;
     case TE2_P_OUTPUT_VOL:  d.setOutputVolume(v);                    break;
     case TE2_P_POWER:       d.setBypass(v < 0.5f);                   break;
     case TE2_P_DRY:         d.setDryLevel(v);                        break;
@@ -280,97 +272,6 @@ static int te2_try_legacy_state(te2_instance *inst, const char *val)
 }
 
 /* ------------------------------------------------------------------ */
-/* Ping-pong / stereo width                                            */
-/*                                                                     */
-/* Tape Echo has ONE mono tape loop, so there is no second delay line to
- * cross-feed the way a stereo ping-pong delay does — that lives inside the
- * feedback path, and the core is vendored unmodified. Instead the core is
- * asked for a wet-only bus (Mix = 1 makes its dry gain zero) and the
- * alternation is applied out here, then the dry is blended back using the
- * core's own mix law.
- *
- * Successive repeats arrive one head period apart, so panning the wet with a
- * square of period 2T puts repeat n on one side and repeat n+1 on the other:
- * that is what ping-pong is. It is exact while a single head is active. In a
- * multi-head mode the taps sit at 1.00 / 1.91 / 2.76 of the period and no
- * single square separates them, so the effect becomes stereo movement rather
- * than strict alternation — which is the honest limit of doing this outside
- * the loop, not a bug.
- *
- * With Ping Pong off, or Width at 0, none of this runs: the core mixes as it
- * always has and the output is bit-identical to a build without the feature.
- */
-static void te2_prepare_shelves(te2_instance *inst, double fs)
-{
-    /* The direct monitor path the core applies to its dry signal — same
-     * constants, so the blend below reconstructs it rather than approximating
-     * it. (TapeEchoDSP::prepare, "direct monitor path".) */
-    for (int c = 0; c < 2; c++) {
-        inst->dryLowShelf[c].setCoeffs(duskaudio::Biquad::shelf(
-            fs, 46.3316f, -6.17579f, 0.492074f, /*high=*/false));
-        inst->dryHighShelf[c].setCoeffs(duskaudio::Biquad::shelf(
-            fs, 13762.47f, -6.13329f, 0.492299f, /*high=*/true));
-    }
-    inst->shelvesReady = true;
-}
-
-/* Period between successive repeats of the leading head, in samples. */
-static double te2_repeat_period(te2_instance *inst, float rate01, double fs)
-{
-    const int mode = (int)(inst->values[TE2_P_MODE].load(std::memory_order_relaxed) + 0.5f) + 1;
-    const int head = teLeadingHeadIndexForMode(mode);
-    const double ms = (double)duskaudio::TapeEchoDSP::delayMsForRepeatRate(rate01)
-                        * duskaudio::TapeEchoDSP::kHeadRatio[head]
-                      + duskaudio::TapeEchoDSP::kHeadOffsetMs[head];
-    return (ms > 1.0 ? ms : 1.0) * 0.001 * fs;
-}
-
-static void te2_ping_pong(te2_instance *inst, int n, float rate01, double fs)
-{
-    const float width = inst->values[TE2_P_WIDTH].load(std::memory_order_relaxed) * 0.01f;
-    const float mix   = inst->values[TE2_P_MIX].load(std::memory_order_relaxed);
-    const float dryLv = inst->values[TE2_P_DRY].load(std::memory_order_relaxed);
-    const float outV  = inst->values[TE2_P_OUTPUT_VOL].load(std::memory_order_relaxed);
-    const float drive = inst->values[TE2_P_INPUT].load(std::memory_order_relaxed);
-
-    /* the core's own laws, so a blend here matches what it would have done */
-    const float dryMixGain = mix < 0.5f ? 1.0f : 2.0f * (1.0f - mix);
-    const float wetMixGain = mix > 0.5f ? 1.0f : 2.0f * mix;
-    const float outputGain = std::pow(10.0f, 2.0f * outV - 1.0f);
-    /* the core's front-panel input taper (private there; same curve, and the
-     * loadtest proves the reconstruction matches the core's own mix) */
-    const float inputGain  = drive * (1.29212f + 1.40165f * drive);
-    const float dryGain    = outputGain * dryMixGain * dryLv * inputGain;
-
-    const double period = 2.0 * te2_repeat_period(inst, rate01, fs);  /* L->R->L */
-    const double step   = 1.0 / period;
-    /* ~4 ms one-pole on the square keeps the hand-over click-free */
-    const float  smooth = 1.0f - std::exp(-1.0f / (0.004f * (float)fs));
-
-    for (int i = 0; i < n; i++) {
-        inst->ppPhase += step;
-        if (inst->ppPhase >= 1.0) inst->ppPhase -= 1.0;
-        const float target = inst->ppPhase < 0.5 ? 1.0f : -1.0f;
-        inst->ppSign += smooth * (target - inst->ppSign);
-
-        const float s  = width * inst->ppSign;
-        /* constant power across the swing: at s=0 both sides stay at unity,
-         * which is exactly the centred wet the core would have produced. */
-        const float comp = 1.0f / std::sqrt(1.0f + s * s);
-        const float wl = inst->bufL[i] * (1.0f + s) * comp;
-        const float wr = inst->bufR[i] * (1.0f - s) * comp;
-
-        const float dl = inst->dryHighShelf[0].process(
-                            inst->dryLowShelf[0].process(inst->rawL[i]));
-        const float dr = inst->dryHighShelf[1].process(
-                            inst->dryLowShelf[1].process(inst->rawR[i]));
-
-        inst->bufL[i] = dryGain * dl + wetMixGain * wl;
-        inst->bufR[i] = dryGain * dr + wetMixGain * wr;
-    }
-}
-
-/* ------------------------------------------------------------------ */
 /* v2 entry points                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -403,8 +304,6 @@ static void te2_process_block(void *instance, int16_t *audio_inout, int frames)
     auto *inst = (te2_instance *)instance;
     if (!inst || !audio_inout || frames <= 0) return;
 
-    float effRate = 0.0f;
-
     /* Motor speed, once per block: tempo sync wins, otherwise the knob. */
     if (inst->values[TE2_P_SYNC].load(std::memory_order_relaxed) > 0.5f) {
         double bpm = (g_host && g_host->get_bpm) ? (double)g_host->get_bpm() : 120.0;
@@ -422,27 +321,12 @@ static void te2_process_block(void *instance, int16_t *audio_inout, int frames)
             clamped = (double)duskaudio::TapeEchoDSP::kMinDelayMs;
         if (clamped > (double)duskaudio::TapeEchoDSP::kMaxDelayMs)
             clamped = (double)duskaudio::TapeEchoDSP::kMaxDelayMs;
-        effRate = duskaudio::TapeEchoDSP::repeatRateForDelayMs((float)clamped);
-        inst->dsp.setRepeatRate(effRate);
+        inst->dsp.setRepeatRate(
+            duskaudio::TapeEchoDSP::repeatRateForDelayMs((float)clamped));
     } else {
-        effRate = inst->values[TE2_P_RATE].load(std::memory_order_relaxed);
-        inst->dsp.setRepeatRate(effRate);
+        inst->dsp.setRepeatRate(
+            inst->values[TE2_P_RATE].load(std::memory_order_relaxed));
     }
-
-    /* The stereo stage only engages when it has something to do. Otherwise the
-     * core mixes exactly as it always has — no reconstructed dry, no extra
-     * gain staging, bit-identical to a build without ping-pong. */
-    const bool ppOn  = inst->values[TE2_P_PINGPONG].load(std::memory_order_relaxed) > 0.5f;
-    const bool powOn = inst->values[TE2_P_POWER].load(std::memory_order_relaxed) > 0.5f;
-    /* Width 0 still runs the blend so it stays exercised: with no swing the
-     * reconstructed dry + centred wet must equal what the core would have
-     * mixed itself, which the loadtest asserts sample by sample. */
-    const bool wide = ppOn && powOn;
-
-    inst->dsp.setMix(wide ? 1.0f    /* wet only; the blend happens out here */
-                          : inst->values[TE2_P_MIX].load(std::memory_order_relaxed));
-    if (wide && !inst->shelvesReady)
-        te2_prepare_shelves(inst, g_host ? (double)g_host->sample_rate : (double)MOVE_SAMPLE_RATE);
 
     int16_t *p = audio_inout;
     while (frames > 0) {
@@ -452,17 +336,10 @@ static void te2_process_block(void *instance, int16_t *audio_inout, int frames)
             inst->bufL[i] = (float)p[i * 2]     * (1.0f / 32768.0f);
             inst->bufR[i] = (float)p[i * 2 + 1] * (1.0f / 32768.0f);
         }
-        if (wide) {
-            memcpy(inst->rawL, inst->bufL, sizeof(float) * (size_t)n);
-            memcpy(inst->rawR, inst->bufR, sizeof(float) * (size_t)n);
-        }
 
         const float *ins[2] = { inst->bufL, inst->bufR };
         float *outs[2]      = { inst->bufL, inst->bufR };
         inst->dsp.processBlock(ins, outs, 2, n);
-        if (wide) te2_ping_pong(inst, n, effRate,
-                                g_host ? (double)g_host->sample_rate
-                                       : (double)MOVE_SAMPLE_RATE);
 
         for (int i = 0; i < n; i++) {
             float l = inst->bufL[i] * 32767.0f;

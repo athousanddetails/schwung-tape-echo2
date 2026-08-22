@@ -188,47 +188,50 @@ int main(int argc, char **argv)
 
     /* -- ping-pong ------------------------------------------------------ */
     {
-        /* 1. With Ping Pong on and Width 0 the shell reconstructs the dry and
-         *    blends it itself. That must equal what the core would have mixed:
-         *    it is the only check that the reconstructed monitor shelves,
-         *    input taper, mix law and output gain are all right. */
-        void *ref = fx->create_instance(".", nullptr);
-        void *shl = fx->create_instance(".", nullptr);
-        const char *cfg[][2] = { {"mode","H1"}, {"intensity","0.35"}, {"echo_volume","0.8"},
-                                 {"mix","0.42"}, {"input_volume","0.7"}, {"wow_flutter","0"},
-                                 {"tape_age","New"} };
-        for (int c = 0; c < 7; c++) {
-            fx->set_param(ref, cfg[c][0], cfg[c][1]);
-            fx->set_param(shl, cfg[c][0], cfg[c][1]);
-        }
-        fx->set_param(shl, "ping_pong", "On");
-        fx->set_param(shl, "stereo_width", "0");
-
-        static int16_t ra[MOVE_FRAMES_PER_BLOCK * 2], sa[MOVE_FRAMES_PER_BLOCK * 2];
-        double worst = 0;
-        for (int b = 0; b < 300; b++) {
-            for (int k = 0; k < MOVE_FRAMES_PER_BLOCK; k++) {
-                const double s = (b < 40)
-                    ? 0.5 * sin(2.0 * M_PI * 220.0 * (b * MOVE_FRAMES_PER_BLOCK + k) / 44100.0) : 0.0;
-                ra[k*2] = ra[k*2+1] = sa[k*2] = sa[k*2+1] = (int16_t)(s * 20000);
-            }
-            fx->process_block(ref, ra, MOVE_FRAMES_PER_BLOCK);
-            fx->process_block(shl, sa, MOVE_FRAMES_PER_BLOCK);
-            if (b > 60)
-                for (int k = 0; k < MOVE_FRAMES_PER_BLOCK * 2; k++) {
-                    const double d = fabs((double)ra[k] - (double)sa[k]);
-                    if (d > worst) worst = d;
+        static int16_t sa[MOVE_FRAMES_PER_BLOCK * 2];
+        /* Correlation between the two outputs: 1.0 = the mono bus the original
+         * produces, near 0 = the sides carrying different repeats. */
+        struct Probe {
+            static double corr(audio_fx_api_v2_t *fx, const char *mode, const char *pp) {
+                void *i = fx->create_instance(".", nullptr);
+                const char *cfg[][2] = { {"mode",mode}, {"repeat_rate","0.5"}, {"intensity","0.5"},
+                                         {"echo_volume","1.0"}, {"mix","1.0"}, {"wow_flutter","0"},
+                                         {"tape_age","New"}, {"ping_pong",pp}, {"stereo_width","100"} };
+                for (int c = 0; c < 9; c++) fx->set_param(i, cfg[c][0], cfg[c][1]);
+                static int16_t io[MOVE_FRAMES_PER_BLOCK * 2];
+                for (int b = 0; b < 400; b++) { memset(io, 0, sizeof io); fx->process_block(i, io, MOVE_FRAMES_PER_BLOCK); }
+                double num = 0, dl = 0, dr = 0;
+                for (int b = 0; b < 400; b++) {
+                    memset(io, 0, sizeof io);
+                    if (b % 80 == 0) for (int k = 0; k < 8; k++) io[k*2] = io[k*2+1] = 20000;
+                    fx->process_block(i, io, MOVE_FRAMES_PER_BLOCK);
+                    if (b > 100) for (int k = 0; k < MOVE_FRAMES_PER_BLOCK; k++) {
+                        const double l = io[k*2], r = io[k*2+1];
+                        num += l * r; dl += l * l; dr += r * r;
+                    }
                 }
+                fx->destroy_instance(i);
+                return (dl > 0 && dr > 0) ? num / sqrt(dl * dr) : 1.0;
+            }
+        };
+        const char *modes[3] = { "H1", "H2+3", "H123R" };
+        bool offMono = true, onWide = true;
+        for (int m = 0; m < 3; m++) {
+            if (Probe::corr(fx, modes[m], "Off") < 0.99) offMono = false;
+            /* every head runs its own square, so a multi-head mode separates
+             * too — that is what doing this per head buys over one square on
+             * the summed bus */
+            if (Probe::corr(fx, modes[m], "On") > 0.5) onWide = false;
         }
-        CHECK(worst <= 3, "width 0 blend matches the core's own mix (%.0f LSB)", worst);
-        fx->destroy_instance(ref);
+        CHECK(offMono, "ping-pong off leaves the echo bus mono, as upstream");
+        CHECK(onWide, "ping-pong separates the sides in single AND multi-head modes");
 
-        /* 2. At full width successive repeats must land on opposite sides. */
-        fx->set_param(shl, "repeat_rate", "1.0");
-        fx->set_param(shl, "intensity", "0.62");
-        fx->set_param(shl, "echo_volume", "1.0");
-        fx->set_param(shl, "mix", "1.0");
-        fx->set_param(shl, "stereo_width", "100");
+        /* successive repeats must land on opposite sides */
+        void *shl = fx->create_instance(".", nullptr);
+        const char *c2[][2] = { {"mode","H1"}, {"repeat_rate","1.0"}, {"intensity","0.62"},
+                                {"echo_volume","1.0"}, {"mix","1.0"}, {"wow_flutter","0"},
+                                {"tape_age","New"}, {"ping_pong","On"}, {"stereo_width","100"} };
+        for (int c = 0; c < 9; c++) fx->set_param(shl, c2[c][0], c2[c][1]);
         for (int b = 0; b < 500; b++) { memset(sa, 0, sizeof sa); fx->process_block(shl, sa, MOVE_FRAMES_PER_BLOCK); }
         int found = 0, flips = 0, prev = 0;
         bool prevQuiet = true;
