@@ -75,7 +75,7 @@
     },
     {
       "heading": "Credits",
-      "body": "DSP: Tape Echo 2 by Dusk Audio, github.com/dusk-audio/dusk-audio-plugins, GPL-3.0. The DSP core is vendored unmodified. Move port by athousanddetails."
+      "body": "DSP: Tape Echo 2 by Dusk Audio, github.com/dusk-audio/dusk-audio-plugins, GPL-3.0. The core carries one Schwung-specific change, marked in the files: a per-head Ping Pong stage on the echo output tap. With Ping Pong off it is the original sample for sample, and the build checks that against a fresh copy of upstream. Move port by athousanddetails."
     }
   ]
 }
