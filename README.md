@@ -50,6 +50,12 @@ while the module is loaded in an FX slot:
 move.local:7700/api/remote-ui/module-assets/tape-echo2/web_ui.html
 ```
 
+On a Schwung that offers custom UIs to FX slots
+([#253](https://github.com/charlesvestal/schwung/pull/253)) the same panel
+appears inside the module's section on `move.local:7700/remote-ui`. It reads
+the component it is driving from the host, so it addresses the right FX slot
+either way.
+
 ![Tape Echo 2 remote panel](docs/remote-ui.png)
 
 ## Install

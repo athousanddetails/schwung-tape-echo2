@@ -420,8 +420,14 @@ function onParams(p){var t=false;for(var k in p){values[k]=p[k];t=true;}if(t)ref
 
 /* ---------------- transport ---------------- */
 if(window.parent!==window&&window.schwungRemote){
-  bridge=window.schwungRemote;comp="synth";
-  connEl.textContent="embedded";connEl.className="conn ok";
+  bridge=window.schwungRemote;
+  /* The manager tags the iframe URL with the component it is driving, so an
+   * FX panel addresses fx1:/fx2: instead of synth:. Older hosts that only
+   * ever embedded synths send nothing, hence the fallback. */
+  comp=window.schwungRemote.component
+       || new URLSearchParams(location.search).get("component")
+       || "synth";
+  connEl.textContent="embedded · "+comp;connEl.className="conn ok";
   document.getElementById("slotSel").style.display="none";
   bridge.onParamChange(onParams);bridge.getChainParams().then(applyChainParams);
 }else{
