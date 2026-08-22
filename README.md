@@ -28,9 +28,14 @@ swings. Each head alternates on its own delay, so the multi-head modes separate
 too. With it off the echo bus is mono and the output is bit-identical to Dusk
 Audio's original — the build checks that against upstream on every run.
 
-Patches from the older [TapeDelay](https://github.com/charlesvestal/schwung-space-delay)
-module load as-is: the stored delay time picks the playback head that can reach
-it, and feedback, mix, tone, note division and stereo width carry across.
+Tape Echo 2 reads the older [TapeDelay](https://github.com/charlesvestal/schwung-space-delay)
+module's settings: the stored delay time picks the playback head that can reach
+it, and feedback, mix, tone, note division and stereo width carry across. A
+patch names the module it wants, though, so point it at this one first:
+
+```bash
+python3 tools/convert_tapedelay_patch.py MyPatch.json
+```
 
 Works with [Movy](https://github.com/DimaDake/schwung-movy) — a
 `movy_config.json` ships with the module.

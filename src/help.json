@@ -71,7 +71,7 @@
     },
     {
       "heading": "TapeDelay presets",
-      "body": "Patches saved with the older TapeDelay module (schwung-space-delay) load straight into Tape Echo 2. Its delay time picks the playback head that can actually reach it \u2014 head 1 covers about 69 to 177 ms, head 2 up to 339, head 3 up to 490 \u2014 and the motor is set from there; times outside that range pin at the nearest end. Feedback scales to just under self-oscillation, mix and tone carry across (tone becomes the treble shelf), and a note division switches tempo sync on at the nearest detent. Stereo width maps to the Ping Pong widener and switches it on."
+      "body": "Tape Echo 2 reads settings saved by the older TapeDelay module (schwung-space-delay). A patch names the module it wants, so run tools/convert_tapedelay_patch.py on it first to point that slot here; the settings themselves are then translated on load. Its delay time picks the playback head that can actually reach it \u2014 head 1 covers about 69 to 177 ms, head 2 up to 339, head 3 up to 490 \u2014 and the motor is set from there; times outside that range pin at the nearest end. Feedback scales to just under self-oscillation, mix and tone carry across (tone becomes the treble shelf), and a note division switches tempo sync on at the nearest detent. Stereo width maps to the Ping Pong widener and switches it on."
     },
     {
       "heading": "Credits",
