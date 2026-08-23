@@ -3,14 +3,72 @@
  "name": "Tape Echo 2",
  "banks": [
   {
-   "name": "Echo",
+   "name": "Main",
    "rows": [
     [
      {
-      "key": "mode",
-      "short": "MODE",
-      "full": "Mode",
+      "key": "time_ms",
+      "type": "float",
+      "short": "Time",
+      "full": "Time",
+      "min": 69,
+      "max": 490
+     },
+     {
+      "key": "tempo_sync",
       "type": "enum",
+      "short": "Sync",
+      "full": "Sync",
+      "options": [
+       "Off",
+       "On"
+      ]
+     },
+     {
+      "key": "intensity",
+      "type": "float",
+      "short": "Fbk",
+      "full": "Fbk",
+      "min": 0,
+      "max": 1
+     },
+     {
+      "key": "mix",
+      "type": "float",
+      "short": "Mix",
+      "full": "Mix",
+      "min": 0,
+      "max": 1
+     },
+     {
+      "key": "tone_tilt",
+      "type": "float",
+      "short": "Tone",
+      "full": "Tone",
+      "min": -1,
+      "max": 1
+     },
+     {
+      "key": "stereo_width",
+      "type": "int",
+      "short": "Width",
+      "full": "Width",
+      "min": 0,
+      "max": 100
+     },
+     {
+      "key": "tape_wear",
+      "type": "float",
+      "short": "Tape",
+      "full": "Tape",
+      "min": 0,
+      "max": 1
+     },
+     {
+      "key": "mode",
+      "type": "enum",
+      "short": "Mode",
+      "full": "Mode",
       "options": [
        "H1",
        "H2",
@@ -25,109 +83,37 @@
        "H123R",
        "Rev"
       ]
-     },
+     }
+    ]
+   ]
+  },
+  {
+   "name": "Advanced",
+   "rows": [
+    [
      {
-      "key": "repeat_rate",
-      "short": "RATE",
-      "full": "Repeat Rate",
-      "type": "float",
-      "min": 0,
-      "max": 1
-     },
-     {
-      "key": "intensity",
-      "short": "INTS",
-      "full": "Intensity",
-      "type": "float",
-      "min": 0,
-      "max": 1
-     },
-     {
-      "key": "echo_volume",
-      "short": "EVOL",
-      "full": "Echo Volume",
-      "type": "float",
-      "min": 0,
-      "max": 1
-     },
-     {
-      "key": "reverb_volume",
-      "short": "RVOL",
-      "full": "Reverb Volume",
-      "type": "float",
-      "min": 0,
-      "max": 1
-     },
-     {
-      "key": "mix",
-      "short": "MIX",
-      "full": "Mix",
-      "type": "float",
-      "min": 0,
-      "max": 1
-     },
-     {
-      "key": "tempo_sync",
-      "short": "SYNC",
-      "full": "Tempo Sync",
+      "key": "input_send",
       "type": "enum",
+      "short": "Arm",
+      "full": "Arm",
       "options": [
        "Off",
        "On"
       ]
      },
      {
-      "key": "echo_rate_note",
-      "short": "NOTE",
-      "full": "Echo Rate Note",
-      "type": "int",
-      "min": 1,
-      "max": 11
-     }
-    ]
-   ]
-  },
-  {
-   "name": "Tape",
-   "rows": [
-    [
-     {
       "key": "input_volume",
-      "short": "DRIV",
-      "full": "Input Drive",
       "type": "float",
-      "min": 0,
-      "max": 1
-     },
-     {
-      "key": "bass",
-      "short": "BASS",
-      "full": "Bass",
-      "type": "float",
-      "min": -1,
-      "max": 1
-     },
-     {
-      "key": "treble",
-      "short": "TREB",
-      "full": "Treble",
-      "type": "float",
-      "min": -1,
-      "max": 1
-     },
-     {
-      "key": "wow_flutter",
-      "short": "WOW",
-      "full": "Wow & Flutter",
-      "type": "float",
+      "short": "Drive",
+      "full": "Drive",
       "min": 0,
       "max": 1
      },
      {
       "key": "tape_age",
-      "short": "AGE",
-      "full": "Tape Age",
       "type": "enum",
+      "short": "Age",
+      "full": "Age",
       "options": [
        "New",
        "Used",
@@ -135,33 +121,83 @@
       ]
      },
      {
-      "key": "input_send",
-      "short": "SEND",
-      "full": "Input Send",
-      "type": "enum",
-      "options": [
-       "Off",
-       "On"
-      ]
+      "key": "wow_flutter",
+      "type": "float",
+      "short": "W&F",
+      "full": "W&F",
+      "min": 0,
+      "max": 1
+     },
+     {
+      "key": "bass",
+      "type": "float",
+      "short": "Bass",
+      "full": "Bass",
+      "min": -1,
+      "max": 1
+     },
+     {
+      "key": "treble",
+      "type": "float",
+      "short": "Treb",
+      "full": "Treble",
+      "min": -1,
+      "max": 1
+     },
+     {
+      "key": "repeat_rate",
+      "type": "float",
+      "short": "Rate",
+      "full": "Rate",
+      "min": 0,
+      "max": 1
+     },
+     null
+    ]
+   ]
+  },
+  {
+   "name": "Out",
+   "rows": [
+    [
+     {
+      "key": "echo_volume",
+      "type": "float",
+      "short": "Echo",
+      "full": "Echo",
+      "min": 0,
+      "max": 1
+     },
+     {
+      "key": "reverb_volume",
+      "type": "float",
+      "short": "Verb",
+      "full": "Verb",
+      "min": 0,
+      "max": 1
      },
      {
       "key": "ping_pong",
-      "short": "PP",
-      "full": "Ping Pong",
       "type": "enum",
+      "short": "Pong",
+      "full": "Pong",
       "options": [
        "Off",
        "On"
       ]
      },
      {
-      "key": "stereo_width",
-      "short": "WIDTH",
-      "full": "Stereo Width",
+      "key": "echo_rate_note",
       "type": "int",
-      "min": 0,
-      "max": 100
-     }
+      "short": "Div",
+      "full": "Div",
+      "min": 1,
+      "max": 11
+     },
+     null,
+     null,
+     null,
+     null
     ]
    ]
   }

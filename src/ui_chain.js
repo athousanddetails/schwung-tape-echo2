@@ -24,23 +24,29 @@ import {
 const SCREEN_WIDTH = 128;
 
 /* Mirrors src/dsp/te2_params.h (visible params, same order). */
+/* Macros first: this is the Main page, the surface TapeDelay had. Turning one
+ * moves the members below it, here and everywhere else that reads them. */
 const PARAMS = [
-    { key: "mode", name: "Mode", type: "enum", options: ["H1", "H2", "H3", "H2+3", "H1+R", "H2+R", "H3+R", "H12+R", "H23+R", "H13+R", "H123R", "Rev"] },
-    { key: "repeat_rate", name: "Rate", type: "float", min: 0, max: 1, step: 0.02 },
-    { key: "intensity", name: "Intensity", type: "float", min: 0, max: 1, step: 0.02 },
-    { key: "echo_volume", name: "Echo Vol", type: "float", min: 0, max: 1, step: 0.02 },
-    { key: "reverb_volume", name: "Reverb Vol", type: "float", min: 0, max: 1, step: 0.02 },
+    { key: "time_ms", name: "Time", type: "float", min: 69, max: 490, step: 5, unit: "ms" },
+    { key: "tempo_sync", name: "Sync", type: "enum", options: ["Off", "On"] },
+    { key: "intensity", name: "Feedback", type: "float", min: 0, max: 1, step: 0.02 },
     { key: "mix", name: "Mix", type: "float", min: 0, max: 1, step: 0.02 },
-    { key: "tempo_sync", name: "Tempo Sync", type: "enum", options: ["Off", "On"] },
-    { key: "echo_rate_note", name: "Rate Note", type: "int", min: 1, max: 11, step: 1 },
+    { key: "tone_tilt", name: "Tone", type: "float", min: -1, max: 1, step: 0.04 },
+    { key: "stereo_width", name: "Width", type: "int", min: 0, max: 100, step: 5 },
+    { key: "tape_wear", name: "Tape", type: "float", min: 0, max: 1, step: 0.02 },
+    { key: "mode", name: "Mode", type: "enum", options: ["H1", "H2", "H3", "H2+3", "H1+R", "H2+R", "H3+R", "H12+R", "H23+R", "H13+R", "H123R", "Rev"] },
+    /* the engine underneath */
+    { key: "input_send", name: "Arm", type: "enum", options: ["Off", "On"] },
     { key: "input_volume", name: "Drive", type: "float", min: 0, max: 1, step: 0.02 },
+    { key: "repeat_rate", name: "Rate", type: "float", min: 0, max: 1, step: 0.02 },
+    { key: "echo_volume", name: "Echo", type: "float", min: 0, max: 1, step: 0.02 },
+    { key: "reverb_volume", name: "Verb", type: "float", min: 0, max: 1, step: 0.02 },
+    { key: "echo_rate_note", name: "Div", type: "int", min: 1, max: 11, step: 1 },
     { key: "bass", name: "Bass", type: "float", min: -1, max: 1, step: 0.04 },
     { key: "treble", name: "Treble", type: "float", min: -1, max: 1, step: 0.04 },
-    { key: "wow_flutter", name: "Wow/Flutter", type: "float", min: 0, max: 1, step: 0.02 },
-    { key: "tape_age", name: "Tape Age", type: "enum", options: ["New", "Used", "Old"] },
-    { key: "input_send", name: "Input Send", type: "enum", options: ["Off", "On"] },
-    { key: "ping_pong", name: "Ping Pong", type: "enum", options: ["Off", "On"] },
-    { key: "stereo_width", name: "Width", type: "int", min: 0, max: 100, step: 5 },
+    { key: "wow_flutter", name: "W&F", type: "float", min: 0, max: 1, step: 0.02 },
+    { key: "tape_age", name: "Age", type: "enum", options: ["New", "Used", "Old"] },
+    { key: "ping_pong", name: "Pong", type: "enum", options: ["Off", "On"] },
 ];
 
 const ROWS_PER_PAGE = 4;

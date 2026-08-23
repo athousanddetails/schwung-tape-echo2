@@ -10,6 +10,7 @@
  * Run ON the Move for the realtime number; runs anywhere for correctness.
  */
 
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -156,8 +157,10 @@ int main(int argc, char **argv)
         knobs /= 2;   /* one open + one close quote per key */
         CHECK(n > 0 && knobs > 0 && knobs <= 8,
               "ui_hierarchy declares %d knobs (Move has 8 encoders)", knobs);
-        CHECK(params == 16,
-              "ui_hierarchy publishes all 16 published params (got %d)", params);
+        /* Three levels now (Main 8 / Advanced 6 / Out 4), so counting root's
+         * objects is meaningless — it also holds two navigation entries. What
+         * matters is that every published param is reachable on some page. */
+        CHECK(params == 10, "root publishes its 8 knobs + 2 section links (got %d)", params);
     }
 
     /* -- state round trip ---------------------------------------------- */
@@ -196,8 +199,14 @@ int main(int argc, char **argv)
                 void *i = fx->create_instance(".", nullptr);
                 const char *cfg[][2] = { {"mode",mode}, {"repeat_rate","0.5"}, {"intensity","0.5"},
                                          {"echo_volume","1.0"}, {"mix","1.0"}, {"wow_flutter","0"},
-                                         {"tape_age","New"}, {"ping_pong",pp}, {"stereo_width","100"} };
-                for (int c = 0; c < 9; c++) fx->set_param(i, cfg[c][0], cfg[c][1]);
+                                         /* reverb OFF: the spring is mono, and it now defaults
+                                          * non-zero, which would mask the decorrelation this
+                                          * measures in the +R modes */
+                                         {"reverb_volume","0"},
+                                         /* width BEFORE ping_pong: width arms pong on a 0 -> non-zero
+                                          * edge, so an explicit pong must come after it */
+                                         {"tape_age","New"}, {"stereo_width","100"}, {"ping_pong",pp} };
+                for (int c = 0; c < 10; c++) fx->set_param(i, cfg[c][0], cfg[c][1]);
                 static int16_t io[MOVE_FRAMES_PER_BLOCK * 2];
                 for (int b = 0; b < 400; b++) { memset(io, 0, sizeof io); fx->process_block(i, io, MOVE_FRAMES_PER_BLOCK); }
                 double num = 0, dl = 0, dr = 0;
@@ -230,8 +239,12 @@ int main(int argc, char **argv)
         void *shl = fx->create_instance(".", nullptr);
         const char *c2[][2] = { {"mode","H1"}, {"repeat_rate","1.0"}, {"intensity","0.62"},
                                 {"echo_volume","1.0"}, {"mix","1.0"}, {"wow_flutter","0"},
+                                         /* reverb OFF: the spring is mono, and it now defaults
+                                          * non-zero, which would mask the decorrelation this
+                                          * measures in the +R modes */
+                                         {"reverb_volume","0"},
                                 {"tape_age","New"}, {"ping_pong","On"}, {"stereo_width","100"} };
-        for (int c = 0; c < 9; c++) fx->set_param(shl, c2[c][0], c2[c][1]);
+        for (int c = 0; c < 10; c++) fx->set_param(shl, c2[c][0], c2[c][1]);
         for (int b = 0; b < 500; b++) { memset(sa, 0, sizeof sa); fx->process_block(shl, sa, MOVE_FRAMES_PER_BLOCK); }
         int found = 0, flips = 0, prev = 0;
         bool prevQuiet = true;
@@ -254,6 +267,193 @@ int main(int argc, char **argv)
         fx->destroy_instance(shl);
     }
 
+    /* -- A fresh instance IS an untouched TapeDelay ---------------------- */
+    /* This module inherited TapeDelay's id, so inserting it has to land
+     * where inserting that one landed. Rather than trust three hand-copied
+     * numbers in te2_params.h, drive the real import with the state
+     * TapeDelay's own create_instance produced and require a brand new
+     * instance to agree with it. Change the mapping and this fails; change
+     * the defaults away from the mapping and this fails. */
+    {
+        void *fresh = fx->create_instance(".", nullptr);
+        void *imported = fx->create_instance(".", nullptr);
+        CHECK(fresh && imported, "two instances for the defaults comparison");
+        if (fresh && imported) {
+            /* verbatim from TapeDelay v0.4.3 create_instance */
+            fx->set_param(imported, "state",
+                "{\"time\":400,\"feedback\":0.4000,\"mix\":0.5000,\"tone\":0.5000,"
+                "\"stereo_width\":0,\"division\":\"free\",\"bpm\":120}");
+
+            static const char *const kMapped[] = {
+                "mode", "repeat_rate", "intensity", "echo_volume", "mix", "treble",
+                "tempo_sync", "stereo_width", "ping_pong",
+            };
+            bool agree = true;
+            for (const char *k : kMapped) {
+                char a[128] = {0}, b[128] = {0};
+                fx->get_param(fresh, k, a, sizeof a);
+                fx->get_param(imported, k, b, sizeof b);
+                /* floats: compare numerically, the printf width is not the point */
+                const bool same = !strcmp(a, b)
+                    || (a[0] && b[0] && (isdigit((unsigned char)a[0]) || a[0] == '-')
+                        && fabs(atof(a) - atof(b)) < 1e-3);
+                if (!same) {
+                    printf("  defaults differ on %-14s fresh=%-10s imported=%s\n", k, a, b);
+                    agree = false;
+                }
+            }
+            CHECK(agree, "fresh defaults == an imported untouched TapeDelay");
+
+            /* and the one that matters by ear: measure it. A default insert
+             * must echo at TapeDelay's 400 ms, not this engine's 177 ms. */
+            char m[64] = {0};
+            fx->get_param(fresh, "mode", m, sizeof m);
+            CHECK(!strcmp(m, "H3"), "default mode is the head that reaches 400 ms (%s)", m);
+
+            fx->set_param(fresh, "intensity", "0");    /* one repeat to find */
+            fx->set_param(fresh, "echo_volume", "1.0");
+            fx->set_param(fresh, "mix", "1.0");        /* wet only */
+            for (int b = 0; b < 400; b++) {            /* settle the smoothers */
+                memset(io, 0, sizeof io);
+                fx->process_block(fresh, io, MOVE_FRAMES_PER_BLOCK);
+            }
+            double peak = 0; int at = -1;
+            for (int b = 0; b < 260; b++) {
+                memset(io, 0, sizeof io);
+                if (b == 0) io[0] = io[1] = 20000;
+                fx->process_block(fresh, io, MOVE_FRAMES_PER_BLOCK);
+                for (int i = 0; i < MOVE_FRAMES_PER_BLOCK; i++) {
+                    double a = fabs((double)io[i * 2]);
+                    if (a > peak) { peak = a; at = b * MOVE_FRAMES_PER_BLOCK + i; }
+                }
+            }
+            const double dms = at * 1000.0 / 44100.0;
+            CHECK(fabs(dms - 400.0) < 12.0,
+                  "default echo lands at TapeDelay's 400 ms (%.1f ms)", dms);
+        }
+        if (fresh) fx->destroy_instance(fresh);
+        if (imported) fx->destroy_instance(imported);
+    }
+
+    /* -- macros ---------------------------------------------------------- */
+    {
+        void *m = fx->create_instance(".", nullptr);
+        char a[64] = {0}, b[64] = {0}, c[64] = {0};
+
+        /* every published param must be reachable on SOME section's page.
+         * repeat_rate is the deliberate exception: TIME drives it. */
+        {
+            char h[16384] = {0};
+            fx->get_param(m, "ui_hierarchy", h, sizeof h);
+            char cps[16384] = {0};
+            fx->get_param(m, "chain_params", cps, sizeof cps);
+            bool allOn = true;
+            const char *p = cps;
+            while ((p = strstr(p, "\"key\":\"")) != nullptr) {
+                p += 7;
+                char k[64] = {0};
+                size_t n = 0;
+                while (p[n] && p[n] != '"' && n < sizeof k - 1) { k[n] = p[n]; n++; }
+                char quoted[72];
+                snprintf(quoted, sizeof quoted, "\"%s\"", k);
+                /* present in some level's knobs array, or the known exception */
+                if (!strstr(h, quoted) && strcmp(k, "repeat_rate") != 0) {
+                    printf("  %s is on no page\n", k);
+                    allOn = false;
+                }
+                p += n;
+            }
+            CHECK(allOn, "every published param is on a page (repeat_rate excepted)");
+        }
+
+        /* TONE tilts: treble follows, bass counter-moves */
+        fx->set_param(m, "tone_tilt", "1.0");
+        fx->get_param(m, "treble", a, sizeof a);
+        fx->get_param(m, "bass", b, sizeof b);
+        CHECK(fabs(atof(a) - 1.0) < 1e-3 && fabs(atof(b) + 0.6) < 1e-3,
+              "TONE +1 -> treble %s, bass %s", a, b);
+
+        /* TAPE default must agree with the member defaults, or a fresh
+         * instance is inconsistent with itself. */
+        void *f = fx->create_instance(".", nullptr);
+        fx->get_param(f, "tape_wear", a, sizeof a);
+        fx->get_param(f, "wow_flutter", b, sizeof b);
+        fx->get_param(f, "tape_age", c, sizeof c);
+        CHECK(fabs(atof(b)) < 1e-3 && !strcmp(c, "Used"),
+              "TAPE default %s lands on the member defaults (wow %s, age %s)", a, b, c);
+        fx->set_param(f, "tape_wear", "0.8");
+        fx->get_param(f, "wow_flutter", b, sizeof b);
+        fx->get_param(f, "tape_age", c, sizeof c);
+        CHECK(atof(b) > 0.5 && !strcmp(c, "Old"), "TAPE 0.8 -> wow %s, age %s", b, c);
+        fx->destroy_instance(f);
+
+        /* TIME must not rewrite MODE — Mode is its own knob on the same page */
+        void *t = fx->create_instance(".", nullptr);
+        fx->set_param(t, "mode", "H1");
+        fx->set_param(t, "time_ms", "450");     /* unreachable on head 1 */
+        fx->get_param(t, "mode", a, sizeof a);
+        CHECK(!strcmp(a, "H1"), "TIME stays within the current head, never rewrites MODE (%s)", a);
+        fx->destroy_instance(t);
+
+        /* WIDTH arms Pong on the rising edge, and does NOT overrule an
+         * explicit Pong afterwards. Getting this wrong made "Pong Off,
+         * Width 100" — upstream's mono case — unreachable. */
+        void *w = fx->create_instance(".", nullptr);
+        fx->set_param(w, "stereo_width", "50");
+        fx->get_param(w, "ping_pong", a, sizeof a);
+        CHECK(!strcmp(a, "On"), "WIDTH 0 -> 50 arms Pong (%s)", a);
+        fx->set_param(w, "ping_pong", "Off");
+        fx->set_param(w, "stereo_width", "80");
+        fx->get_param(w, "ping_pong", a, sizeof a);
+        CHECK(!strcmp(a, "Off"), "WIDTH does not overrule an explicit Pong=Off (%s)", a);
+        fx->destroy_instance(w);
+        fx->destroy_instance(m);
+    }
+
+    /* -- the two import corrections, at points where they were WRONG ---- */
+    /* Both of these shipped broken once, and neither is visible by reading
+     * the code — the numbers only came out of measuring against the old
+     * engine. Pin the shape of each so a "simplification" cannot quietly
+     * restore the version that was wrong. */
+    {
+        /* feedback -> intensity is per head. A single table fitted on head 3
+         * is 11.5 dB/repeat out on head 1, so H1 and H3 must NOT agree. */
+        void *a = fx->create_instance(".", nullptr);
+        void *b = fx->create_instance(".", nullptr);
+        char h1[64] = {0}, h3[64] = {0};
+        fx->set_param(a, "mode", "H1"); fx->set_param(a, "feedback", "0.4000");
+        fx->set_param(b, "mode", "H3"); fx->set_param(b, "feedback", "0.4000");
+        fx->get_param(a, "intensity", h1, sizeof h1);
+        fx->get_param(b, "intensity", h3, sizeof h3);
+        CHECK(fabs(atof(h1) - 0.55) < 0.02,
+              "feedback 0.4 on head 1 -> intensity 0.55 (%s)", h1);
+        CHECK(fabs(atof(h3) - 0.44) < 0.02,
+              "feedback 0.4 on head 3 -> intensity 0.44 (%s)", h3);
+        CHECK(atof(h1) - atof(h3) > 0.05,
+              "the feedback table is per head, not shared");
+        fx->destroy_instance(a); fx->destroy_instance(b);
+
+        /* mix -> echo_volume is 1/(2(1-m)) below noon, NOT m/(1-m). Both give
+         * 1.0 at m=0.5, which is exactly why the wrong one shipped: the
+         * default could not see it. Check away from noon. */
+        static const struct { const char *mix; double want; } kMix[] = {
+            { "0.2000", 0.625 }, { "0.3500", 0.769 }, { "0.5000", 1.0 },
+        };
+        for (auto &c : kMix) {
+            void *m = fx->create_instance(".", nullptr);
+            char st[512];
+            snprintf(st, sizeof st,
+                     "{\"time\":400,\"feedback\":0.4000,\"mix\":%s,\"tone\":0.5000,"
+                     "\"stereo_width\":0,\"division\":\"free\",\"bpm\":120}", c.mix);
+            fx->set_param(m, "state", st);
+            char got[64] = {0};
+            fx->get_param(m, "echo_volume", got, sizeof got);
+            CHECK(fabs(atof(got) - c.want) < 0.02,
+                  "mix %s -> echo_volume %.3f (%s)", c.mix, c.want, got);
+            fx->destroy_instance(m);
+        }
+    }
+
     /* -- TapeDelay (schwung-space-delay) preset import ------------------ */
     {
         /* its patch blob, verbatim from that module's get_param("state") */
@@ -271,8 +471,11 @@ int main(int argc, char **argv)
         fx->get_param(inst, "mix", buf, sizeof buf);
         CHECK(fabs(atof(buf) - 0.5) < 1e-3, "legacy mix carries over");
         fx->get_param(inst, "intensity", buf, sizeof buf);
-        CHECK(fabs(atof(buf) - 0.6) < 1e-3,
-              "legacy feedback 0.8 -> intensity 0.6 (scaled below runaway)");
+        /* 250 ms lands on head 2, where feedback 0.8 calibrates to 0.55. The
+         * 0.60 this expected is the head 3 figure, which is what the old
+         * shared table returned for every patch regardless of head. */
+        CHECK(fabs(atof(buf) - 0.55) < 1e-2,
+              "legacy feedback 0.8 on head 2 -> intensity 0.55 (%s)", buf);
         fx->get_param(inst, "stereo_width", buf, sizeof buf);
         CHECK(atoi(buf) == 50, "legacy stereo_width 50 carries over (%s)", buf);
         fx->get_param(inst, "ping_pong", buf, sizeof buf);
