@@ -494,7 +494,19 @@ static int te2_json_number(const char *json, const char *key, float *out)
  * different head the way the legacy import does — MODE is its own knob on the
  * same page, and a Time knob that silently rewrote Mode would be fighting it.
  * So the reachable span depends on the mode, which is honest: that is what the
- * machine does. Out-of-range pins at the motor limit. */
+ * machine does. Out-of-range pins at the motor limit.
+ *
+ * Each head reaches a WINDOW of the declared 69..490 span, and they only
+ * overlap in pairs:
+ *
+ *      H1    69 - 177 ms        H2   131 - 338 ms       H3   189 - 488 ms
+ *
+ * so on the default H3 the bottom of the knob is out of reach. That much is
+ * the machine. What was NOT the machine is that TIME stored the number it was
+ * ASKED for while the tape ran at the number it could reach: 150 on H3 read
+ * back "150 ms" and sounded 189. A readout that disagrees with the sound is
+ * worse than a knob that stops, so TIME now writes back what it achieved, and
+ * running out of head shows up as the number refusing to move. */
 static void te2_macro_time(te2_instance *inst, float ms)
 {
     const int mode = (int)(inst->values[TE2_P_MODE].load(std::memory_order_relaxed) + 0.5f) + 1;
@@ -514,10 +526,24 @@ static void te2_macro_time(te2_instance *inst, float ms)
         if (pos < 1) pos = 1;
         if (pos > kNumSyncKnobPositions) pos = kNumSyncKnobPositions;
         te2_set_index(inst, TE2_P_NOTE, (float)pos);
+        te2_set_index(inst, TE2_P_TIME_MS, te2_clamp(&te2_params[TE2_P_TIME_MS], ms));
         return;
     }
     te2_set_index(inst, TE2_P_RATE,
                   duskaudio::TapeEchoDSP::repeatRateForDelayMs((float)base));
+    te2_set_index(inst, TE2_P_TIME_MS, (float)(base * ratio + offset));
+}
+
+/* The delay this mode is running RIGHT NOW, for TIME to re-latch onto. Reading
+ * it back through the same ratio/offset the forward path uses means the two
+ * cannot drift apart. */
+static float te2_current_time_ms(te2_instance *inst)
+{
+    const int mode = (int)(inst->values[TE2_P_MODE].load(std::memory_order_relaxed) + 0.5f) + 1;
+    const float rate = inst->values[TE2_P_RATE].load(std::memory_order_relaxed);
+    const double base = (double)duskaudio::TapeEchoDSP::delayMsForRepeatRate(rate);
+    return (float)(base * duskaudio::TapeEchoDSP::leadingHeadRatioForMode(mode) +
+                   duskaudio::TapeEchoDSP::leadingHeadOffsetMsForMode(mode));
 }
 
 /* TONE is a tilt, not a lowpass: treble follows the knob and bass counter-moves
@@ -650,7 +676,24 @@ static void te2_set_param(void *instance, const char *key, const char *val)
         te2_apply_preset(inst, (int)(te2_clamp(prm, v) + 0.5f));
         return;
     }
+    const float prev = inst->values[idx].load(std::memory_order_relaxed);
     te2_set_index(inst, idx, v);
+
+    /* TIME re-latches when something else moves the delay under it. This is
+     * DELIBERATELY here and not in te2_apply_macro: that hook is handed
+     * atof(val), and Mode and Sync arrive as enum TEXT ("H3", "On"), which
+     * atof reads as 0. Intercepting them there set every mode to H1.
+     *
+     * It updates what TIME says, never what the tape does — Rate is untouched.
+     *
+     * Entering sync is excluded on purpose: TIME's position is what picks the
+     * detent, so re-latching would move the division out from under the user.
+     * Leaving sync is included, because the tape goes back to a Rate that TIME
+     * has not described since sync was engaged. */
+    if (inst->values[TE2_P_SYNC].load(std::memory_order_relaxed) <= 0.5f &&
+        ((idx == TE2_P_MODE && v != prev) ||
+         (idx == TE2_P_SYNC && prev > 0.5f)))
+        te2_set_index(inst, TE2_P_TIME_MS, te2_current_time_ms(inst));
 }
 
 static int te2_write_str(char *buf, int buf_len, const char *s)
