@@ -117,9 +117,17 @@
         <div class="vu" style="flex:1"><svg id="vuSvg" viewBox="0 0 300 132" style="width:100%;display:block"></svg></div>
       </div>
       <div class="knobrow">
+        <!-- The macros, as plain knobs. Turning one moves the members below
+             and to the right of it, the same as on the device. -->
+        <div class="kn" data-k="time_ms"   data-cap="TIME"></div>
+        <div class="kn" data-k="tone_tilt" data-cap="TONE" data-bip="1"></div>
+        <div class="kn" data-k="tape_wear" data-cap="TAPE"></div>
+        <div class="kn" data-k="mix"       data-cap="MIX"></div>
+      </div>
+      <div class="knobrow">
         <div class="kn" data-k="input_volume" data-cap="INPUT<br>DRIVE"></div>
         <div class="kn" data-k="wow_flutter"  data-cap="WOW &amp;<br>FLUTTER"></div>
-        <div class="kn" data-k="mix"          data-cap="MIX"></div>
+        <div class="kn" data-k="intensity"    data-cap="FEEDBACK"></div>
         <div class="kn" data-k="stereo_width" data-cap="STEREO<br>WIDTH" data-int="1"></div>
       </div>
     </div>
@@ -143,7 +151,7 @@
         <div class="kn" data-k="treble"        data-cap="TREBLE"      data-bip="1"></div>
         <div class="kn" data-k="reverb_volume" data-cap="REVERB<br>LEVEL"></div>
         <div class="kn" data-k="repeat_rate"   data-cap="REPEAT<br>RATE"></div>
-        <div class="kn" data-k="intensity"     data-cap="INTENSITY"></div>
+        <div class="kn" data-k="echo_rate_note" data-cap="DIV" data-int="1"></div>
         <div class="kn" data-k="echo_volume"   data-cap="ECHO<br>LEVEL"></div>
       </div>
     </div>
@@ -214,8 +222,33 @@ function num(k,d){
 }
 function send(k,v){
   values[key(k)]=String(v);
+  macroEcho(k,parseFloat(v));
   if(bridge){bridge.setParam(key(k),String(v));return;}
   if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:"set_param",slot:slot,key:key(k),value:String(v)}));
+}
+
+/* A macro fans out in the PLUGIN, so the members are already correct on the
+ * device the moment it is turned, and a param_update will carry them here.
+ * This only moves the member knobs on screen NOW instead of on the next
+ * update, so the panel does not sit visibly stale while you drag.
+ *
+ * The plugin remains authoritative: whatever it reports wins the moment it
+ * arrives. That is deliberate — if these curves ever drift from
+ * te2_macro_* in tape_echo_plugin.cpp, the screen corrects itself rather
+ * than lying, and the drift shows up as a knob that settles somewhere other
+ * than where it was dragged to. */
+function macroEcho(k,v){
+  if(isNaN(v))return;
+  var set=function(kk,vv){values[key(kk)]=String(vv);};
+  if(k==="tone_tilt"){ set("treble",v); set("bass",-v*0.6); }
+  else if(k==="tape_wear"){
+    set("wow_flutter",Math.max(0,(v-0.25)/0.75));
+    set("tape_age", v<0.15?0:(v<0.60?1:2));
+  }
+  else if(k==="stereo_width"){ set("ping_pong", v>0?1:0); }
+  /* time_ms -> repeat_rate is not mirrored: the mapping needs the mode's head
+   * ratios and the sync branch, and a half-copy of that here would be worse
+   * than a knob that updates one tick late. */
 }
 function el(tag,attrs){var e=document.createElementNS(SVGNS,tag);for(var a in attrs)e.setAttribute(a,attrs[a]);return e;}
 
