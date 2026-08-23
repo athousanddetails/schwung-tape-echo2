@@ -37,7 +37,12 @@
     border-radius:3px;padding:4px 6px}
 
   /* ---------- body ---------- */
-  .body{display:grid;grid-template-columns:minmax(280px,1fr) 300px minmax(360px,1.25fr);
+  /* minmax(0,...) on every track, NOT minmax(280px,...): a px minimum is a
+   * FLOOR the grid cannot go under, so in a frame narrower than the three
+   * minima the columns keep their width and the row overflows instead. The
+   * panel is embedded in an iframe the host sizes, so it does not get to
+   * decide it is 940px wide. */
+  .body{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,300px) minmax(0,1.25fr);
     gap:12px;padding:12px;background:linear-gradient(180deg,#131314,#191919)}
   .card{background:linear-gradient(180deg,#151516,#0f0f10);border:1px solid var(--edge);
     border-radius:4px;padding:12px}
@@ -52,13 +57,17 @@
 
   /* knobs */
   .knobrow{display:flex;gap:6px;justify-content:space-around;margin-top:12px}
-  .kn{width:84px;text-align:center}
+  /* A knob shrinks with its row and stops growing at its drawn size. The SVG
+   * carries width="72" as an attribute, which CSS has to override or the row
+   * cannot get under 4x84 however narrow the card is. */
+  .kn{flex:1 1 0;min-width:0;max-width:84px;text-align:center}
   .kn .cap{font-size:9.5px;letter-spacing:.11em;color:var(--ink);text-transform:uppercase;
     min-height:22px;display:flex;align-items:center;justify-content:center;line-height:1.1}
   .kn .num{font-size:11px;color:var(--ink);font-variant-numeric:tabular-nums;margin-top:2px}
-  .kn svg{cursor:ns-resize;touch-action:none;display:block;margin:0 auto}
+  .kn svg{cursor:ns-resize;touch-action:none;display:block;margin:0 auto;
+    width:100%;max-width:72px;height:auto}
   .kn.off .cap,.kn.off .num{color:var(--off)}
-  .grid4{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 2px}
+  .grid4{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 2px}
 
   /* head select */
   .head{background:linear-gradient(180deg,#5b8f36,#3f6823);border:1px solid #2d4a19;
@@ -73,7 +82,7 @@
   .heads span{font-size:10.5px;color:#eaf5e0;font-variant-numeric:tabular-nums}
 
   /* bottom strip */
-  .strip{display:grid;grid-template-columns:repeat(4,1fr);background:var(--strip);
+  .strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));background:var(--strip);
     border-top:2px solid #000;color:var(--strip-ink)}
   .cell{padding:9px 14px 11px;display:flex;flex-direction:column;align-items:center;gap:6px;
     border-right:1px solid #b9b6ad}
@@ -91,7 +100,14 @@
     font-size:11px;font-weight:700;letter-spacing:.09em;padding:6px 12px;min-width:74px;text-align:center}
   .foot{padding:7px 14px;background:#0b0b0c;border-top:1px solid #000;font-size:9.5px;color:#6e6e72}
   .foot a{color:var(--green-l);text-decoration:none}
-  @media(max-width:900px){.body{grid-template-columns:1fr}.strip{grid-template-columns:1fr}}
+  /* Degrade a column at a time. The single 900px breakpoint this replaces
+   * left a dead band: the three tracks needed ~940px to lay out, so
+   * between 900 and 940 nothing had collapsed yet and the row already
+   * overflowed -- which is the width an embedded panel actually gets. */
+  @media(max-width:1040px){.body{grid-template-columns:minmax(0,1fr) minmax(0,280px)}}
+  @media(max-width:760px){.body{grid-template-columns:1fr}
+    .strip{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media(max-width:460px){.strip{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
