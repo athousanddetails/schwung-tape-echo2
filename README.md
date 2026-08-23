@@ -13,25 +13,36 @@ age, and tempo sync with the reference machine's leading-head note tables.
 
 | Page | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
 |---|---|---|---|---|---|---|---|---|
-| **Echo** | Mode | Rate | Intensity | Echo Vol | Reverb Vol | Mix | Tempo Sync | Rate Note |
-| **Tape** | Drive | Bass | Treble | Wow/Flutter | Tape Age | Input Send | Ping Pong | Width |
+| **Main** | Time | Sync | Fbk | Mix | Tone | Width | Tape | Mode |
+| **Advanced** | Arm | Drive | Age | W&F | Bass | Treble | Rate | — |
+| **Out** | Echo | Verb | Pong | Div | — | — | — | — |
+
+Main is the front page. **Time** is in milliseconds and stays within the
+current head, so it never fights Mode. **Tone**, **Tape** and **Width** are
+macros over real parameters — Tone tilts Bass against Treble, Tape moves Wow &
+Flutter with Tape Age (age multiplies flutter, so they belong together), and
+Width arms Ping Pong on a rising edge, which keeps `Pong Off / Width 100`
+reachable. Everything a macro touches is still on Advanced or Out and moves
+there too.
 
 Modes are `H1 H2 H3 H2+3 H1+R H2+R H3+R H12+R H23+R H13+R H123R Rev` — digits
 are the live playback heads, `R` is the spring tank.
 
-Intensity above ~75% self-oscillates. Input Send is the dub switch: off stops
-feeding the tape while existing repeats wash out. Bass and Treble are on the
-echo path only.
+Fbk above ~75% self-oscillates. Arm is the dub switch: off stops feeding the
+tape while existing repeats wash out — the spring still hears you, so a `+R`
+mode keeps reverberating. Bass and Treble are on the echo path only.
 
-Ping Pong alternates successive repeats left and right, Width sets how far it
+Pong alternates successive repeats left and right, Width sets how far it
 swings. Each head alternates on its own delay, so the multi-head modes separate
 too. With it off the echo bus is mono and the output is bit-identical to Dusk
-Audio's original — the build checks that against upstream on every run.
+Audio's original — the build checks that against a fresh copy of upstream on
+every run.
 
 Tape Echo 2 reads the older [TapeDelay](https://github.com/charlesvestal/schwung-space-delay)
 module's settings: the stored delay time picks the playback head that can reach
-it, and feedback, mix, tone, note division and stereo width carry across. A
-patch names the module it wants, though, so point it at this one first:
+it, and feedback, mix, tone, note division and stereo width carry across,
+calibrated per head against measured decay rather than a flat scale. A patch
+names the module it wants, though, so point it at this one first:
 
 ```bash
 python3 tools/convert_tapedelay_patch.py MyPatch.json
@@ -80,6 +91,10 @@ Requires Docker (cross-compiles for the Move's ARM64, pinned to glibc 2.35):
   files: a per-head ping-pong stage on the echo output tap. Switch Ping Pong
   off and it is upstream sample for sample, which the build verifies against a
   fresh checkout of the original.
+- **[@charlesvestal](https://github.com/charlesvestal)** — Schwung itself, and
+  a substantial contribution back to this module: the macro front page, a
+  per-head calibration of the TapeDelay import, and repairs to the
+  core-equivalence gate ([#1](https://github.com/athousanddetails/schwung-tape-echo2/pull/1)).
 - Move port by athousanddetails.
 
 GPL-3.0, inherited from upstream.
