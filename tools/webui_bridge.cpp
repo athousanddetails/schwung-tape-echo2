@@ -52,24 +52,17 @@ static std::string esc(const std::string &s)
     return o;
 }
 
+/* The STATE blob verbatim — which is exactly what a remote UI receives.
+ *
+ * schwung-manager pushes values by reading "<comp>:state" (fetchAllParams) and
+ * NOT by walking chain_params, so a key served only by get_param never reaches
+ * the browser. Dumping the individual params here instead was a harness that
+ * was kinder than the device: the panel's note readout worked locally and was
+ * blank on a Move. Serve what the manager serves. */
 static void dump(void)
 {
-    std::string o = "{";
-    bool first = true;
-    for (int i = 0; i < TE2_PARAM_COUNT; i++) {
-        const std::string v = get(te2_params[i].key);
-        if (!first) o += ",";
-        first = false;
-        o += "\"" + std::string(te2_params[i].key) + "\":\"" + esc(v) + "\"";
-    }
-    /* host-resolved read-only extras the UI shows */
-    const char *extra[] = { "echo_note_name" };
-    for (const char *k : extra) {
-        const std::string v = get(k);
-        if (!v.empty()) o += ",\"" + std::string(k) + "\":\"" + esc(v) + "\"";
-    }
-    o += "}";
-    printf("%s\n", o.c_str());
+    const std::string st = get("state");
+    printf("%s\n", (st.empty() || st[0] != '{') ? "{}" : st.c_str());
     fflush(stdout);
 }
 

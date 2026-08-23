@@ -392,6 +392,38 @@ static void te2_destroy_instance(void *instance)
     delete (te2_instance *)instance;
 }
 
+/* The head-1 motor time actually in effect, in ms.
+ *
+ * Under tempo sync the motor comes from the division and the host BPM, so
+ * repeat_rate no longer describes what the tape is doing — anything computing
+ * a delay from repeat_rate is wrong for as long as sync is on. That is not
+ * hypothetical: the web panel's three head readouts are derived from it.
+ *
+ * One function, called by process_block for the motor and by get_param for the
+ * readout, so the number on screen cannot drift from the number in the tape. */
+static double te2_motor_base_ms(te2_instance *inst)
+{
+    if (inst->values[TE2_P_SYNC].load(std::memory_order_relaxed) <= 0.5f)
+        return (double)duskaudio::TapeEchoDSP::delayMsForRepeatRate(
+            inst->values[TE2_P_RATE].load(std::memory_order_relaxed));
+
+    const double bpm = (g_host && g_host->get_bpm) ? (double)g_host->get_bpm() : 120.0;
+    const int mode = (int)(inst->values[TE2_P_MODE].load(std::memory_order_relaxed) + 0.5f) + 1;
+    const double ratio  = duskaudio::TapeEchoDSP::leadingHeadRatioForMode(mode);
+    const double offset = duskaudio::TapeEchoDSP::leadingHeadOffsetMsForMode(mode);
+    const int division = teDivisionForSyncKnobPos(
+        (int)(inst->values[TE2_P_NOTE].load(std::memory_order_relaxed) + 0.5f) - 1,
+        teLeadingHeadIndexForMode(mode));
+    const double requestedHead1Ms = (syncDelayMs(bpm, division) - offset) / ratio;
+    /* CLAMP, do not octave-fold — the hardware pins out-of-range notes at
+     * the motor limit (see the reference shell for the measurements). */
+    if (requestedHead1Ms < (double)duskaudio::TapeEchoDSP::kMinDelayMs)
+        return (double)duskaudio::TapeEchoDSP::kMinDelayMs;
+    if (requestedHead1Ms > (double)duskaudio::TapeEchoDSP::kMaxDelayMs)
+        return (double)duskaudio::TapeEchoDSP::kMaxDelayMs;
+    return requestedHead1Ms;
+}
+
 static void te2_process_block(void *instance, int16_t *audio_inout, int frames)
 {
     auto *inst = (te2_instance *)instance;
@@ -399,23 +431,8 @@ static void te2_process_block(void *instance, int16_t *audio_inout, int frames)
 
     /* Motor speed, once per block: tempo sync wins, otherwise the knob. */
     if (inst->values[TE2_P_SYNC].load(std::memory_order_relaxed) > 0.5f) {
-        double bpm = (g_host && g_host->get_bpm) ? (double)g_host->get_bpm() : 120.0;
-        const int mode = (int)(inst->values[TE2_P_MODE].load(std::memory_order_relaxed) + 0.5f) + 1;
-        const double ratio  = duskaudio::TapeEchoDSP::leadingHeadRatioForMode(mode);
-        const double offset = duskaudio::TapeEchoDSP::leadingHeadOffsetMsForMode(mode);
-        const int division = teDivisionForSyncKnobPos(
-            (int)(inst->values[TE2_P_NOTE].load(std::memory_order_relaxed) + 0.5f) - 1,
-            teLeadingHeadIndexForMode(mode));
-        const double requestedHead1Ms = (syncDelayMs(bpm, division) - offset) / ratio;
-        /* CLAMP, do not octave-fold — the hardware pins out-of-range notes at
-         * the motor limit (see the reference shell for the measurements). */
-        double clamped = requestedHead1Ms;
-        if (clamped < (double)duskaudio::TapeEchoDSP::kMinDelayMs)
-            clamped = (double)duskaudio::TapeEchoDSP::kMinDelayMs;
-        if (clamped > (double)duskaudio::TapeEchoDSP::kMaxDelayMs)
-            clamped = (double)duskaudio::TapeEchoDSP::kMaxDelayMs;
-        inst->dsp.setRepeatRate(
-            duskaudio::TapeEchoDSP::repeatRateForDelayMs((float)clamped));
+        inst->dsp.setRepeatRate(duskaudio::TapeEchoDSP::repeatRateForDelayMs(
+            (float)te2_motor_base_ms(inst)));
     } else {
         inst->dsp.setRepeatRate(
             inst->values[TE2_P_RATE].load(std::memory_order_relaxed));
@@ -863,6 +880,29 @@ static int te2_get_param(void *instance, const char *key, char *buf, int buf_len
                                   (double)inst->values[i].load(std::memory_order_relaxed));
             if (w >= cap - 32) return -1;
         }
+        /* Two DERIVED fields, deliberately in the snapshot.
+         *
+         * schwung-manager pushes a component's values to a browser by reading
+         * this blob (fetchAllParams reads "<comp>:state"), NOT by walking
+         * chain_params — so a key that is only served by get_param never
+         * reaches a remote UI at all. That is why the panel's note readout
+         * showed nothing on a device while working locally.
+         *
+         * Safe to carry: te2_set_param's state path looks each key up in
+         * te2_params and ignores what it cannot find, so these are written on
+         * save and dropped on restore rather than fighting the real values
+         * they are computed from. */
+        w += (size_t)snprintf(o + w, cap - w, ",\"echo_base_ms\":%.3f",
+                              te2_motor_base_ms(inst));
+        {
+            const int mode = (int)(inst->values[TE2_P_MODE].load(std::memory_order_relaxed) + 0.5f) + 1;
+            const int division = teDivisionForSyncKnobPos(
+                (int)(inst->values[TE2_P_NOTE].load(std::memory_order_relaxed) + 0.5f) - 1,
+                teLeadingHeadIndexForMode(mode));
+            w += (size_t)snprintf(o + w, cap - w, ",\"echo_note_name\":\"%s\"",
+                                  kSyncDivisions[division].name);
+        }
+        if (w >= cap - 8) return -1;
         w += (size_t)snprintf(o + w, cap - w, "}");
         return te2_write_str(buf, buf_len, o);
     }
@@ -875,6 +915,12 @@ static int te2_get_param(void *instance, const char *key, char *buf, int buf_len
         return snprintf(buf, buf_len, "%.3f", (double)inst->dsp.getRecordVuLevel());
     if (!strcmp(key, "peak_level"))
         return snprintf(buf, buf_len, "%.3f", (double)inst->dsp.getRecordPeakLevel());
+
+    /* The head-1 motor time in effect, ms. Read this rather than deriving a
+     * delay from repeat_rate: under tempo sync repeat_rate is not what the
+     * tape is doing. */
+    if (!strcmp(key, "echo_base_ms"))
+        return snprintf(buf, buf_len, "%.3f", te2_motor_base_ms(inst));
 
     /* the note name behind the current Echo Rate detent (leading-head table) */
     if (!strcmp(key, "echo_note_name")) {

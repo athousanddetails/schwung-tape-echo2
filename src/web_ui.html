@@ -170,7 +170,6 @@
         <div class="kn" data-k="treble"        data-cap="TREBLE"      data-bip="1"></div>
         <div class="kn" data-k="reverb_volume" data-cap="REVERB<br>LEVEL"></div>
         <div class="kn" data-k="repeat_rate"   data-cap="REPEAT<br>RATE"></div>
-        <div class="kn" data-k="echo_rate_note" data-cap="DIV" data-int="1"></div>
         <div class="kn" data-k="echo_volume"   data-cap="ECHO<br>LEVEL"></div>
       </div>
     </div>
@@ -238,6 +237,20 @@ var MODE_NAMES=["HEAD 1","HEAD 2","HEAD 3","HEADS 2 + 3",
 var MODE_HEADS=[[1,0,0],[0,1,0],[0,0,1],[0,1,1],[1,0,0],[0,1,0],[0,0,1],[1,1,0],[0,1,1],[1,0,1],[1,1,1],[0,0,0]];
 function revOn(m){return m>=4;}
 function tapeOn(m){return m<=10;}
+
+/* The delay the LEADING head of the current mode is running, in ms.
+ *
+ * One derivation, three consumers: the head readouts, TIME, and anything else
+ * that wants to say how long the echo is. echo_base_ms is the head-1 motor
+ * time the plugin reports, which is correct under tempo sync too -- deriving
+ * it from repeat_rate is not. */
+function leadDelayMs(){
+  var mode=Math.round(num("mode",0));
+  var heads=MODE_HEADS[mode]||[1,0,0], li=0;
+  for(var i=0;i<3;i++) if(heads[i]){li=i;break;}
+  var base=num("echo_base_ms",0)||delayMs(num("repeat_rate",0));
+  return base*HEAD_RATIO[li]+HEAD_OFF[li];
+}
 
 function meta(k){return META[k]||{type:"float",min:0,max:1};}
 function key(k){return comp+":"+k;}
@@ -343,6 +356,11 @@ function paint(r){
   var a=(A0+SPAN*f)*Math.PI/180;
   r.ptr.setAttribute("x2",36+17*Math.cos(a));r.ptr.setAttribute("y2",36+17*Math.sin(a));
   if(m.type==="enum"&&m.options) r.num.textContent=m.options[Math.round(v)]||"—";
+  /* TIME reports the delay IN EFFECT, not the macro's stored position. With
+   * tempo sync on those differ: the motor comes from the division, and TIME
+   * kept showing whatever it was last set to while the echo ran somewhere
+   * else entirely. leadDelayMs() is the same number the head readouts use. */
+  else if(r.k==="time_ms")       r.num.textContent=fmtUnit(leadDelayMs(),m);
   else if(m.display_format||m.unit) r.num.textContent=fmtUnit(v,m);
   else if(r.isInt)               r.num.textContent=String(Math.round(v));
   else if(m.min<0)               r.num.textContent=(v>0?"+":"")+Math.round(v*100)+"%";
@@ -458,7 +476,12 @@ function refresh(){
    * STEREO WIDTH was greyed out permanently, including with Ping Pong on,
    * which is the one state it exists for. */
   var pp=num("ping_pong",0)>=1;
-  var base=delayMs(num("repeat_rate",0));
+  /* echo_base_ms is the head-1 motor time actually in effect. Deriving it
+   * from repeat_rate instead is wrong for as long as tempo sync is on, since
+   * the motor then comes from the division and the host BPM -- the three head
+   * readouts silently reported the free-running delay. Fall back for hosts
+   * predating the key. */
+  var base=num("echo_base_ms",0)||delayMs(num("repeat_rate",0));
   for(var i=0;i<3;i++){
     document.getElementById("h"+(i+1)).textContent =
       heads[i] ? Math.round(base*HEAD_RATIO[i]+HEAD_OFF[i])+" ms" : "—";
@@ -470,15 +493,7 @@ function refresh(){
                ((r.k==="repeat_rate"||r.k==="intensity"||r.k==="echo_volume") && !tapeOn(mode)) ||
                (r.k==="repeat_rate" && synced);
     r.box.classList.toggle("off",dead);
-    /* Under sync the motor is driven by the division, so the knob really is
-     * inert -- but a greyed-out PERCENTAGE tells you nothing about what the
-     * echo is doing. Show the division instead, and keep that number legible
-     * while the dial stays dim: inert control, live readout. */
-    if(r.k==="repeat_rate"){
-      var note=synced?(values[key("echo_note_name")]||""):"";
-      r.box.classList.toggle("live-readout",!!note);
-      if(note) r.num.textContent=note;
-    }
+
   });
 
   document.querySelector('.rocker[data-sw="tempo_sync"]').dataset.on=synced?"1":"0";
@@ -488,8 +503,12 @@ function refresh(){
   document.querySelector('.rocker[data-sw="input_send"]').dataset.on=send_?"1":"0";
   document.getElementById("sendLed").classList.toggle("on",send_);
 
+  /* The note, not the detent number. "7" is the position of a knob on a
+   * machine nobody in this window can see; "1/8" is the question being asked.
+   * This is also now the ONLY place the division is shown -- there was a DIV
+   * knob in the grid saying 1..11 at the same time. */
   document.getElementById("noteRead").textContent =
-    synced ? (Math.round(num("echo_rate_note",5))+"  "+(values[key("echo_note_name")]||"")).trim() : "FREE";
+    synced ? (values[key("echo_note_name")]||"—") : "FREE";
   var am=meta("tape_age");
   document.getElementById("ageRead").textContent =
     ((am.options&&am.options[Math.round(num("tape_age",1))])||"USED").toUpperCase();

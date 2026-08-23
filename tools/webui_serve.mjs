@@ -155,9 +155,12 @@ const broadcast = (obj) => { for (const c of clients) send(c, obj); };
 
 /* ---------------- the manager's protocol ---------------- */
 
+/* Values go out as STRINGS, because the manager's map is map[string]string —
+ * a harness that hands the page real JS numbers is testing a code path the
+ * device never takes. */
 const prefixed = (vals) => {
   const o = {};
-  for (const k of Object.keys(vals)) o[`${COMPONENT}:${k}`] = vals[k];
+  for (const k of Object.keys(vals)) o[`${COMPONENT}:${k}`] = String(vals[k]);
   return o;
 };
 
