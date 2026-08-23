@@ -901,6 +901,12 @@ static int te2_get_param(void *instance, const char *key, char *buf, int buf_len
                 teLeadingHeadIndexForMode(mode));
             w += (size_t)snprintf(o + w, cap - w, ",\"echo_note_name\":\"%s\"",
                                   kSyncDivisions[division].name);
+            const int head = teLeadingHeadIndexForMode(mode);
+            w += (size_t)snprintf(o + w, cap - w, ",\"echo_note_names\":\"");
+            for (int pos = 0; pos < kNumSyncKnobPositions && w < cap - 24; pos++)
+                w += (size_t)snprintf(o + w, cap - w, "%s%s", pos ? "," : "",
+                                      kSyncDivisions[teDivisionForSyncKnobPos(pos, head)].name);
+            w += (size_t)snprintf(o + w, cap - w, "\"");
         }
         if (w >= cap - 8) return -1;
         w += (size_t)snprintf(o + w, cap - w, "}");
@@ -921,6 +927,26 @@ static int te2_get_param(void *instance, const char *key, char *buf, int buf_len
      * tape is doing. */
     if (!strcmp(key, "echo_base_ms"))
         return snprintf(buf, buf_len, "%.3f", te2_motor_base_ms(inst));
+
+    /* All eleven detent names for the CURRENT mode, comma separated.
+     *
+     * A UI cannot build this list itself: which note a detent means depends on
+     * the leading head, and a half-copy of teDivisionForSyncKnobPos in
+     * JavaScript is a second source of truth that drifts the first time the
+     * table changes. Serve it. */
+    if (!strcmp(key, "echo_note_names")) {
+        const int mode = (int)(inst->values[TE2_P_MODE].load(std::memory_order_relaxed) + 0.5f) + 1;
+        const int head = teLeadingHeadIndexForMode(mode);
+        char list[256];
+        size_t w = 0;
+        for (int pos = 0; pos < kNumSyncKnobPositions; pos++) {
+            const int division = teDivisionForSyncKnobPos(pos, head);
+            w += (size_t)snprintf(list + w, sizeof list - w, "%s%s",
+                                  pos ? "," : "", kSyncDivisions[division].name);
+            if (w >= sizeof list - 16) break;
+        }
+        return te2_write_str(buf, buf_len, list);
+    }
 
     /* the note name behind the current Echo Rate detent (leading-head table) */
     if (!strcmp(key, "echo_note_name")) {

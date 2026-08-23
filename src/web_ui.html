@@ -101,6 +101,8 @@
   .ends{display:flex;justify-content:space-between;width:66px;font-size:8px;letter-spacing:.1em;color:#5b5852}
   .note{background:#16240e;color:#9ed07a;border:1px solid #0d1a07;border-radius:3px;
     font-size:11px;font-weight:700;letter-spacing:.09em;padding:6px 12px;min-width:74px;text-align:center}
+  select.note{font-family:inherit;cursor:pointer;appearance:auto}
+  select.note:disabled{color:#4d6b3c;cursor:default}
   .foot{padding:7px 14px;background:#0b0b0c;border-top:1px solid #000;font-size:9.5px;color:#6e6e72}
   .foot a{color:var(--green-l);text-decoration:none}
   /* Degrade a column at a time. The single 900px breakpoint this replaces
@@ -185,7 +187,7 @@
       <div class="cap">TEMPO SYNC</div>
       <div style="display:flex;align-items:center;gap:12px">
         <div class="rocker" data-sw="tempo_sync"><i></i></div>
-        <div class="note" id="noteRead" style="cursor:ns-resize;touch-action:none" title="drag to change the sync note">FREE</div>
+        <select class="note" id="noteSel" title="sync division"></select>
       </div>
       <div class="ends" style="width:66px"><span>OFF</span><span>ON</span></div>
     </div>
@@ -446,17 +448,18 @@ document.getElementById("ageRead").addEventListener("click",function(){
   var v=(Math.round(num("tape_age",1))+1)%n;
   send("tape_age",m.options?m.options[v]:String(v));refresh();
 });
-(function(){
-  var nr=document.getElementById("noteRead"),drag=false,ly=0;
-  nr.addEventListener("pointerdown",function(e){drag=true;ly=e.clientY;nr.setPointerCapture(e.pointerId);e.preventDefault();});
-  nr.addEventListener("pointermove",function(e){
-    if(!drag)return;var dy=ly-e.clientY;if(Math.abs(dy)<7)return;ly=e.clientY;
-    var v=Math.round(num("echo_rate_note",5))+(dy>0?1:-1);
-    send("echo_rate_note",String(Math.max(1,Math.min(11,v))));refresh();
-  });
-  function up(e){if(drag){drag=false;try{nr.releasePointerCapture(e.pointerId);}catch(_){}}}
-  nr.addEventListener("pointerup",up);nr.addEventListener("pointercancel",up);
-})();
+/* The division is a LIST of eleven named things, so it is a list control.
+ * It used to be a 74px box you dragged vertically, seven pixels per step, with
+ * no indication that it was draggable and no way to see the other ten values
+ * without passing through them -- and on a touchpad, one gesture that scrolls
+ * the page. A select is the honest widget, and it makes the whole set visible.
+ *
+ * The option names come from the plugin (echo_note_names): which note a detent
+ * means depends on the leading head, and reimplementing that mapping here
+ * would be a second source of truth. */
+document.getElementById("noteSel").addEventListener("change",function(){
+  send("echo_rate_note",String(this.selectedIndex+1));refresh();
+});
 
 /* ---------------- refresh ---------------- */
 function refresh(){
@@ -507,8 +510,22 @@ function refresh(){
    * machine nobody in this window can see; "1/8" is the question being asked.
    * This is also now the ONLY place the division is shown -- there was a DIV
    * knob in the grid saying 1..11 at the same time. */
-  document.getElementById("noteRead").textContent =
-    synced ? (values[key("echo_note_name")]||"—") : "FREE";
+  var sel=document.getElementById("noteSel");
+  var names=(values[key("echo_note_names")]||"").split(",").filter(Boolean);
+  /* Rebuild only when the mode changed the names under us, so an open dropdown
+   * is not torn down by an unrelated param push. */
+  if(names.length && sel.dataset.names!==names.join(",")){
+    sel.dataset.names=names.join(",");
+    sel.innerHTML="";
+    names.forEach(function(n){var o=document.createElement("option");o.textContent=n;sel.appendChild(o);});
+  }
+  if(!names.length && !sel.options.length){
+    var o=document.createElement("option");o.textContent="—";sel.appendChild(o);
+  }
+  var noteIdx=Math.round(num("echo_rate_note",5))-1;
+  if(noteIdx>=0 && noteIdx<sel.options.length && sel.selectedIndex!==noteIdx)
+    sel.selectedIndex=noteIdx;
+  sel.disabled=!synced;
   var am=meta("tape_age");
   document.getElementById("ageRead").textContent =
     ((am.options&&am.options[Math.round(num("tape_age",1))])||"USED").toUpperCase();
