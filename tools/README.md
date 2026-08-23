@@ -96,3 +96,24 @@ Volume is already at 1.0 and cannot go further.
 
 Tape age turned out not to matter (0.13 dB across New/Used/Old), so the table
 is not fitted against it.
+
+## `webui_serve.mjs` + `webui_bridge.cpp` — the Remote UI, on a laptop
+
+```bash
+mkdir -p build-mac
+clang++ -std=c++17 -O2 -fPIC -shared -Isrc -Isrc/host -Isrc/ported/core \
+  -Isrc/ported/shared-dpf/dsp src/dsp/tape_echo_plugin.cpp \
+  src/ported/core/TapeEchoDSP.cpp -o build-mac/tape-echo2.dylib
+clang++ -std=c++17 -O2 -Isrc -Isrc/host tools/webui_bridge.cpp \
+  -o build-mac/te2_webui_bridge
+node tools/webui_serve.mjs --port 7700     # then open http://localhost:7700/
+```
+
+`src/web_ui.html` runs **unmodified**: the server speaks the same
+`/ws/remote-ui` protocol schwung-manager does, so the page takes its ordinary
+standalone branch. Behind the socket is a native build of the actual plugin,
+not a mock — which is the whole point, because the thing being checked is that
+turning a MACRO moves the members it drives. A mock would have to reimplement
+`te2_apply_macro` and would then agree with itself.
+
+No audio is rendered; this is the parameter surface only.
