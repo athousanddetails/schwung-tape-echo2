@@ -67,6 +67,9 @@
   .kn svg{cursor:ns-resize;touch-action:none;display:block;margin:0 auto;
     width:100%;max-width:72px;height:auto}
   .kn.off .cap,.kn.off .num{color:var(--off)}
+  /* An inert knob whose readout still means something (REPEAT RATE under
+   * tempo sync): dial dim, number legible. */
+  .kn.off.live-readout .num{color:var(--ink)}
   .grid4{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 2px}
 
   /* head select */
@@ -223,6 +226,14 @@ function delayMs(x){
   s=Math.max(0,Math.min(1,s));
   return MIN_MS+s*(MAX_MS-MIN_MS);
 }
+/* Spelled out, because "H12+R" is a part number and not a description. The
+ * wording follows kModeTable in TapeEchoDSP.cpp, which names every one of the
+ * twelve; the enum options stay the short forms because a Move knob cell is
+ * ~25px wide and cannot hold "HEADS 2 + 3 + REVERB". */
+var MODE_NAMES=["HEAD 1","HEAD 2","HEAD 3","HEADS 2 + 3",
+                "HEAD 1 + REVERB","HEAD 2 + REVERB","HEAD 3 + REVERB",
+                "HEADS 1 + 2 + REVERB","HEADS 2 + 3 + REVERB",
+                "HEADS 1 + 3 + REVERB","ALL HEADS + REVERB","REVERB ONLY"];
 /* which heads / reverb each mode uses (index 0..11) */
 var MODE_HEADS=[[1,0,0],[0,1,0],[0,0,1],[0,1,1],[1,0,0],[0,1,0],[0,0,1],[1,1,0],[0,1,1],[1,0,1],[1,1,1],[0,0,0]];
 function revOn(m){return m>=4;}
@@ -314,12 +325,25 @@ Array.prototype.forEach.call(document.querySelectorAll(".kn"),function(box){
   function up(e){if(drag){drag=false;try{svg.releasePointerCapture(e.pointerId);}catch(_){}}}
   svg.addEventListener("pointerup",up);svg.addEventListener("pointercancel",up);
 });
+/* A param that declares a unit means it: TIME is 69..490 ms, and rendering it
+ * as "79%" throws away the only number the user came for -- while HEAD 3 in
+ * the same window says "400 ms". Move's knob grid has honoured unit and
+ * display_format since they were added to chain_params; this had not caught up.
+ * display_format is a printf-ish tail: ".0f" -> 400, ".1f" -> 400.4,
+ * ".0%" -> 44% (a fraction scaled by 100). */
+function fmtUnit(v,m){
+  var df=m.display_format||"", d=parseInt((df.match(/(\d+)/)||[0,"0"])[1],10)||0;
+  if(df.indexOf("%")>=0) return (v*100).toFixed(d)+"%";
+  return v.toFixed(d)+(m.unit?" "+m.unit:"");
+}
+
 function paint(r){
   var m=meta(r.k),span=(m.max-m.min)||1,v=num(r.k,m.min);
   var f=Math.max(0,Math.min(1,(v-m.min)/span));
   var a=(A0+SPAN*f)*Math.PI/180;
   r.ptr.setAttribute("x2",36+17*Math.cos(a));r.ptr.setAttribute("y2",36+17*Math.sin(a));
   if(m.type==="enum"&&m.options) r.num.textContent=m.options[Math.round(v)]||"—";
+  else if(m.display_format||m.unit) r.num.textContent=fmtUnit(v,m);
   else if(r.isInt)               r.num.textContent=String(Math.round(v));
   else if(m.min<0)               r.num.textContent=(v>0?"+":"")+Math.round(v*100)+"%";
   else                           r.num.textContent=Math.round(f*100)+"%";
@@ -425,9 +449,15 @@ function refresh(){
   var a=(A0+SPAN*(mode/11))*Math.PI/180;
   headPtr.setAttribute("x2",115+42*Math.cos(a));headPtr.setAttribute("y2",100+42*Math.sin(a));
   var mm=meta("mode");
-  document.getElementById("modeRead").textContent=(mm.options&&mm.options[mode])||("MODE "+(mode+1));
+  document.getElementById("modeRead").textContent=
+    MODE_NAMES[mode]||(mm.options&&mm.options[mode])||("MODE "+(mode+1));
 
   var synced=num("tempo_sync",0)>=1;
+  /* pp is read by the greying pass below. It used to be declared AFTER that
+   * pass, so `var` hoisting made it undefined there and `!pp` was always true:
+   * STEREO WIDTH was greyed out permanently, including with Ping Pong on,
+   * which is the one state it exists for. */
+  var pp=num("ping_pong",0)>=1;
   var base=delayMs(num("repeat_rate",0));
   for(var i=0;i<3;i++){
     document.getElementById("h"+(i+1)).textContent =
@@ -440,10 +470,18 @@ function refresh(){
                ((r.k==="repeat_rate"||r.k==="intensity"||r.k==="echo_volume") && !tapeOn(mode)) ||
                (r.k==="repeat_rate" && synced);
     r.box.classList.toggle("off",dead);
+    /* Under sync the motor is driven by the division, so the knob really is
+     * inert -- but a greyed-out PERCENTAGE tells you nothing about what the
+     * echo is doing. Show the division instead, and keep that number legible
+     * while the dial stays dim: inert control, live readout. */
+    if(r.k==="repeat_rate"){
+      var note=synced?(values[key("echo_note_name")]||""):"";
+      r.box.classList.toggle("live-readout",!!note);
+      if(note) r.num.textContent=note;
+    }
   });
 
   document.querySelector('.rocker[data-sw="tempo_sync"]').dataset.on=synced?"1":"0";
-  var pp=num("ping_pong",0)>=1;
   document.querySelector('.rocker[data-sw="ping_pong"]').dataset.on=pp?"1":"0";
   document.getElementById("ppLed").classList.toggle("on",pp);
   var send_=num("input_send",1)>=1;
@@ -462,7 +500,8 @@ function applyChainParams(arr){
   if(!Array.isArray(arr))return;
   META={};
   arr.forEach(function(p){META[p.key]={type:p.type,min:p.min!==undefined?p.min:0,
-    max:p.max!==undefined?p.max:1,options:p.options,def:p["default"]};});
+    max:p.max!==undefined?p.max:1,options:p.options,def:p["default"],
+    unit:p.unit,display_format:p.display_format};});
   refresh();
 }
 function onParams(p){var t=false;for(var k in p){values[k]=p[k];t=true;}if(t)refresh();}
