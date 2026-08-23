@@ -6,8 +6,9 @@ head and reverb combinations, record EQ and tape saturation inside the
 feedback loop so every repeat darkens and compresses, wow and flutter, tape
 age, and tempo sync with the reference machine's leading-head note tables.
 
-![Tape Echo 2 — page 1](docs/page_1.png)
-![Tape Echo 2 — page 2](docs/page_2.png)
+![Main](docs/page_1.png)
+![Advanced](docs/page_2.png)
+![Out](docs/page_3.png)
 
 ## Controls
 
