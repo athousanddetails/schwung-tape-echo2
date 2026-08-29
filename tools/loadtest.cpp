@@ -340,8 +340,12 @@ int main(int argc, char **argv)
         void *m = fx->create_instance(".", nullptr);
         char a[64] = {0}, b[64] = {0}, c[64] = {0};
 
-        /* every published param must be reachable on SOME section's page.
-         * repeat_rate is the deliberate exception: TIME drives it. */
+        /* Every published param must be reachable on SOME section's page —
+         * no exceptions. repeat_rate used to be excepted here on the grounds
+         * that TIME drives it, but it stayed in chain_params and on both
+         * movy's Advanced page and the web panel, so it was reachable in
+         * three surfaces and missing from the fourth. An exception in the
+         * gate is how that survived. (issue #2) */
         {
             char h[16384] = {0};
             fx->get_param(m, "ui_hierarchy", h, sizeof h);
@@ -357,13 +361,13 @@ int main(int argc, char **argv)
                 char quoted[72];
                 snprintf(quoted, sizeof quoted, "\"%s\"", k);
                 /* present in some level's knobs array, or the known exception */
-                if (!strstr(h, quoted) && strcmp(k, "repeat_rate") != 0) {
+                if (!strstr(h, quoted)) {
                     printf("  %s is on no page\n", k);
                     allOn = false;
                 }
                 p += n;
             }
-            CHECK(allOn, "every published param is on a page (repeat_rate excepted)");
+            CHECK(allOn, "every published param is on a page");
         }
 
         /* TONE tilts: treble follows, bass counter-moves */

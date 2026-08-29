@@ -737,11 +737,18 @@ static const char *const te2_knobs_main[8] = {
     "time_ms", "tempo_sync", "intensity", "mix",
     "tone_tilt", "stereo_width", "tape_wear", "mode",
 };
-static const char *const te2_knobs_advanced[6] = {
+static const char *const te2_knobs_advanced[7] = {
     /* AGE before W&F: age SCALES flutter (kFlutterAgeLin/Sq, 1.00/1.76/3.36
      * across New/Used/Old), so it is the outer control — which tape is on the
-     * machine — and W&F is how badly that tape runs. */
+     * machine — and W&F is how badly that tape runs.
+     *
+     * RATE last: it is TIME's raw half, the way DIV is SYNC's on OUT. TIME
+     * covers it on MAIN, but leaving it off every level made it the one
+     * published param no hierarchy-driven UI could reach, while movy_config
+     * and the web panel both showed it. Same list, three places, one of them
+     * out of step. */
     "input_send", "input_volume", "tape_age", "wow_flutter", "bass", "treble",
+    "repeat_rate",
 };
 static const char *const te2_knobs_out[4] = {
     "echo_volume", "reverb_volume", "ping_pong", "echo_rate_note",
@@ -848,7 +855,7 @@ static int te2_serve_ui_hierarchy(te2_instance *inst, char *buf, int buf_len)
     if (w >= cap - 2) return -1;
 
     w = te2_write_level(o, cap, w, "advanced", "Advanced",
-                        te2_knobs_advanced, 6, false);
+                        te2_knobs_advanced, 7, false);
     w = te2_write_level(o, cap, w, "out", "Out", te2_knobs_out, 4, true);
     w += (size_t)snprintf(o + w, cap - w, "}}");
     if (w >= cap) return -1;

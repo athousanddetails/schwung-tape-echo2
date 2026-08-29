@@ -124,6 +124,29 @@ for p in chain:
         check(f'"{opt}"' in ui_chain,
               f"ui_chain.js: {p['key']} option '{opt}' missing/stale")
 
+# ---- the hierarchy pages and the movy pages are the same list ---------
+# Two hand-maintained surfaces describe the same knob layout: the te2_knobs_*
+# arrays that build ui_hierarchy, and movy_config's banks. Nothing compared
+# them, so repeat_rate sat on movy's Advanced page and the web panel while no
+# hierarchy level listed it — reachable in three surfaces, missing from the
+# fourth, and invisible to every gate here (issue #2).
+plugin_cpp = (ROOT / "src/dsp/tape_echo_plugin.cpp").read_text()
+hier_keys = []
+for arr in re.findall(r"te2_knobs_\w+\[\d+\]\s*=\s*\{(.*?)\};", plugin_cpp, re.S):
+    body = re.sub(r"/\*.*?\*/", "", arr, flags=re.S)      # strip comments
+    hier_keys += re.findall(r'"(\w+)"', body)
+check(bool(hier_keys), "found the te2_knobs_* page tables")
+for k in hier_keys:
+    check(k in chain_by_key, f"hierarchy page lists {k}, which is not a chain_param")
+for k in chain_by_key:
+    check(k in hier_keys,
+          f"{k} is a chain_param but on no ui_hierarchy page — no hierarchy-driven "
+          f"UI can reach it")
+check(sorted(hier_keys) == sorted(seen_keys),
+      "ui_hierarchy pages and movy_config cover different keys: "
+      f"only in hierarchy {sorted(set(hier_keys) - set(seen_keys))}, "
+      f"only in movy {sorted(set(seen_keys) - set(hier_keys))}")
+
 # ---- the .so filename the host will actually dlopen -------------------
 # An audio_fx module is loaded from "<audio_fx>/<id>/<id>.so" (chain_host.c
 # builds that path literally and NEVER reads the module.json "dsp" field).
